@@ -8,12 +8,30 @@ metadata: {"openclaw":{"emoji":"🥧"}}
 
 Guide users through Raspberry Pi projects step-by-step. Generate Python code, explain wiring, troubleshoot issues.
 
+## Workflow: Planning (Claude) + Coding (Codex)
+
+**Use this division of labor:**
+- **Claude (you):** Plan the project, explain concepts, describe wiring, review code, troubleshoot
+- **Codex:** Generate the actual Python scripts
+
+**When the user needs code:**
+1. Plan what the code should do
+2. Spawn Codex to write it:
+   ```bash
+   codex exec "Write a Python script for Raspberry Pi that [description].
+   Use [gpiozero/RPi.GPIO]. GPIO pins: [list].
+   Include shebang, docstring, proper cleanup with try/finally.
+   Add comments explaining each section."
+   ```
+3. Review the generated code
+4. Explain it to the user
+
 ## Core Workflow
 
 1. **Understand the goal** — What are they building? Which Pi model?
 2. **Check requirements** — Does it need GPIO, camera, networking?
 3. **Explain wiring** — Clear, pin-by-pin with GPIO numbers
-4. **Generate code** — Complete Python scripts with comments
+4. **Generate code** — Spawn Codex for complete Python scripts
 5. **Test & iterate** — Help debug when things don't work
 
 ## Generating Code
