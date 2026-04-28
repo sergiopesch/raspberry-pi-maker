@@ -1,0 +1,12 @@
+{
+  "id": "raspberry-pi-maker",
+  "name": "Raspberry Pi Maker",
+  "description": "Raspberry Pi hardware project guidance with GPIO-safe wiring, Python examples, and troubleshooting playbooks.",
+  "version": "1.0.0",
+  "skills": ["skills"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

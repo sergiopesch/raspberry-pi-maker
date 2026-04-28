@@ -107,7 +107,12 @@ def status():
 
 if __name__ == '__main__':
     print("Starting web server on http://0.0.0.0:5000")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    print("Use this only on a trusted local network.")
+    try:
+        app.run(host='0.0.0.0', port=5000, debug=False)
+    finally:
+        for led in leds.values():
+            led.close()
 ```
 
 **Run:**
@@ -342,12 +347,18 @@ pip3 install paho-mqtt
 import paho.mqtt.client as mqtt
 from gpiozero import LED, Button
 import json
+import os
+import sys
 
 # Configuration
 MQTT_BROKER = "homeassistant.local"  # Or IP address
 MQTT_PORT = 1883
-MQTT_USER = "your_user"
-MQTT_PASS = "your_password"
+MQTT_USER = os.environ.get("MQTT_USER")
+MQTT_PASS = os.environ.get("MQTT_PASS")
+
+if not MQTT_USER or not MQTT_PASS:
+    print("Set MQTT_USER and MQTT_PASS environment variables first.")
+    sys.exit(1)
 
 # Devices
 led = LED(17)
@@ -465,6 +476,7 @@ sudo journalctl -u myproject -f
 import signal
 import sys
 import logging
+import time
 from gpiozero import LED
 
 # Set up logging

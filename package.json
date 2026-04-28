@@ -1,0 +1,67 @@
+{
+  "name": "raspberry-pi-maker",
+  "version": "1.0.0",
+  "description": "OpenClaw plugin for Raspberry Pi hardware project guidance, GPIO-safe wiring, Python examples, and troubleshooting.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": "./index.js",
+  "license": "MIT",
+  "author": "Sergio Pesch",
+  "engines": {
+    "node": ">=20"
+  },
+  "bugs": {
+    "url": "https://github.com/sergiopesch/raspberry-pi-maker/issues"
+  },
+  "homepage": "https://github.com/sergiopesch/raspberry-pi-maker",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sergiopesch/raspberry-pi-maker.git"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "raspberry-pi",
+    "gpio",
+    "electronics",
+    "python",
+    "sensors",
+    "maker"
+  ],
+  "files": [
+    "index.js",
+    "openclaw.plugin.json",
+    "assets/**",
+    "skills/**",
+    "references/**",
+    "scripts/validate_plugin.py",
+    "README.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "prepack": "npm test && node --check index.js",
+    "prepublishOnly": "npm test && node --check index.js && npm pack --dry-run",
+    "validate": "python3 scripts/validate_plugin.py",
+    "test": "python3 scripts/validate_plugin.py"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.3.24-beta.2"
+  },
+  "openclaw": {
+    "extensions": ["./index.js"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2",
+      "minGatewayVersion": "2026.3.24-beta.2"
+    },
+    "build": {
+      "openclawVersion": "2026.4.24",
+      "pluginSdkVersion": "2026.4.24"
+    }
+  }
+}

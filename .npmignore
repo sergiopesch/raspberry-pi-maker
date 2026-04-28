@@ -1,0 +1,7 @@
+.git/
+.github/
+.DS_Store
+*.log
+*.tmp
+node_modules/
+raspberry-pi-maker-*.tgz

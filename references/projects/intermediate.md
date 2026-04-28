@@ -42,20 +42,25 @@ dht = adafruit_dht.DHT22(board.D4)
 
 print("Reading DHT22 sensor. Ctrl+C to stop.\n")
 
-while True:
-    try:
-        temperature = dht.temperature
-        humidity = dht.humidity
-        
-        print(f"Temp: {temperature:.1f}°C ({temperature * 9/5 + 32:.1f}°F)")
-        print(f"Humidity: {humidity:.1f}%")
-        print("-" * 30)
-        
-    except RuntimeError as e:
-        # DHT sensors sometimes fail to read
-        print(f"Reading failed: {e}")
-    
-    time.sleep(2)
+try:
+    while True:
+        try:
+            temperature = dht.temperature
+            humidity = dht.humidity
+
+            print(f"Temp: {temperature:.1f}°C ({temperature * 9/5 + 32:.1f}°F)")
+            print(f"Humidity: {humidity:.1f}%")
+            print("-" * 30)
+
+        except RuntimeError as e:
+            # DHT sensors sometimes fail to read
+            print(f"Reading failed: {e}")
+
+        time.sleep(2)
+except KeyboardInterrupt:
+    print("\nStopping.")
+finally:
+    dht.exit()
 ```
 
 ---
@@ -126,11 +131,19 @@ def measure_distance():
     time.sleep(0.00001)
     GPIO.output(TRIG, GPIO.LOW)
     
-    # Wait for echo
+    timeout = time.monotonic() + 0.04
+
+    # Wait for echo to start
     while GPIO.input(ECHO) == 0:
-        pulse_start = time.time()
+        if time.monotonic() > timeout:
+            raise TimeoutError("Echo pulse did not start")
+    pulse_start = time.monotonic()
+
+    # Wait for echo to end
     while GPIO.input(ECHO) == 1:
-        pulse_end = time.time()
+        if time.monotonic() > timeout:
+            raise TimeoutError("Echo pulse did not end")
+    pulse_end = time.monotonic()
     
     # Calculate distance
     pulse_duration = pulse_end - pulse_start
@@ -139,10 +152,15 @@ def measure_distance():
 
 try:
     while True:
-        dist = measure_distance()
-        print(f"Distance: {dist} cm")
+        try:
+            dist = measure_distance()
+            print(f"Distance: {dist} cm")
+        except TimeoutError as e:
+            print(f"Measurement failed: {e}")
         time.sleep(0.5)
 except KeyboardInterrupt:
+    print("\nStopping.")
+finally:
     GPIO.cleanup()
 ```
 
@@ -276,8 +294,11 @@ try:
         time.sleep(2)
         
 except KeyboardInterrupt:
+    pass
+finally:
     lcd.clear()
     lcd.close(clear=True)
+    dht.exit()
 ```
 
 ---

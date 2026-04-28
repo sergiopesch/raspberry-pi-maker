@@ -134,12 +134,12 @@ sudo apt install python3-rpi.gpio
 
 **General fix:**
 ```bash
-pip3 install [package]
+# Preferred: create a virtual environment for pip-installed packages
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install [package]
 
-# Or system-wide
-sudo pip3 install [package]
-
-# Or with apt (preferred for system packages)
+# Or use apt when Raspberry Pi OS provides the package
 sudo apt install python3-[package]
 ```
 

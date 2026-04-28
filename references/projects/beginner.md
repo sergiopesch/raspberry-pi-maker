@@ -309,11 +309,11 @@ def play_game():
     time.sleep(random.uniform(2, 5))  # Random delay
     
     led.on()
-    start_time = time.time()
+    start_time = time.monotonic()
     
     button.wait_for_press()
     
-    reaction_time = time.time() - start_time
+    reaction_time = time.monotonic() - start_time
     led.off()
     
     print(f"Reaction time: {reaction_time:.3f} seconds")
