@@ -4,6 +4,7 @@ import { platform, release } from "node:os";
 import { Type } from "typebox";
 import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
 import { lookupPin, normalizePinExpression, normalizePinTokens } from "./src/pinout.js";
+import { buildSafetyFindings } from "./src/safety.js";
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 3000;
 const DISCOVERY_COMMANDS = [
@@ -177,11 +178,6 @@ const LIFECYCLE_STAGES = Object.freeze({
   },
 });
 
-function includesAny(text, terms) {
-  const lower = text.toLowerCase();
-  return terms.some((term) => lower.includes(term));
-}
-
 function truncateText(text, maxLength) {
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength)}\n...<truncated>`;
@@ -306,71 +302,6 @@ function laptopDiscoverySnapshot({ includeRawOutput = false } = {}) {
       "If a serial device appears, identify it with `udevadm info --query=all --name=/dev/<device>` before using it.",
       "If an SD card or USB mass-storage device appears, do not mount or write to it until the user confirms the device path.",
     ],
-  };
-}
-
-function buildSafetyFindings({ components, wiring, powerNotes = "" }) {
-  const text = `${components}\n${wiring}\n${powerNotes}`;
-  const lower = text.toLowerCase();
-  const findings = [];
-  const warnings = [];
-  const checks = [
-    "Confirm the Pi is powered off before changing wiring.",
-    "Confirm every external module shares common ground with the Pi.",
-    "Verify BCM GPIO numbers against physical header pins before running code.",
-  ];
-
-  if (/(5v|5 v).{0,40}(gpio|input|bcm)|(?:gpio|input|bcm).{0,40}(5v|5 v)/i.test(text)) {
-    findings.push({
-      severity: "blocker",
-      topic: "5V GPIO input",
-      message: "A 5V signal appears to be connected to GPIO. Raspberry Pi GPIO is 3.3V logic only; add a voltage divider or level shifter.",
-    });
-  }
-
-  if (includesAny(lower, ["hc-sr04", "hcsr04", "ultrasonic"]) && !includesAny(lower, ["divider", "level shifter", "level-shifter"])) {
-    findings.push({
-      severity: "blocker",
-      topic: "HC-SR04 Echo",
-      message: "HC-SR04 Echo is commonly 5V. Use a voltage divider or level shifter before the Pi input.",
-    });
-  }
-
-  if (includesAny(lower, ["motor", "servo", "pump", "solenoid", "relay", "led strip", "neopixel"]) && /gpio|bcm/i.test(text)) {
-    findings.push({
-      severity: "blocker",
-      topic: "High-current load",
-      message: "Do not drive motors, servos, relays, pumps, solenoids, or LED strips from a GPIO pin. Use a driver/transistor/module and a suitable power supply.",
-    });
-  }
-
-  if (includesAny(lower, ["led"]) && !includesAny(lower, ["resistor", "330", "220", "470", "1k"])) {
-    findings.push({
-      severity: "warning",
-      topic: "LED current limit",
-      message: "LED wiring should include a current-limiting resistor. A safe default is 330 ohms.",
-    });
-  }
-
-  if (includesAny(lower, ["external", "separate supply", "battery", "bench supply", "driver"]) && !includesAny(lower, ["common ground", "shared ground", "gnd"])) {
-    warnings.push("External power is mentioned but common ground is not explicit.");
-  }
-
-  if (includesAny(lower, ["i2c", "sda", "scl"])) {
-    checks.push("Run `sudo raspi-config nonint do_i2c 0` and `i2cdetect -y 1` after wiring.");
-  }
-  if (includesAny(lower, ["spi", "miso", "mosi", "sclk"])) {
-    checks.push("Run `sudo raspi-config nonint do_spi 0` and test with the smallest vendor example.");
-  }
-  if (includesAny(lower, ["camera", "picamera", "libcamera"])) {
-    checks.push("Run `rpicam-hello --timeout 5000` before adding application code on current Raspberry Pi OS.");
-  }
-
-  return {
-    status: findings.some((finding) => finding.severity === "blocker") ? "needs_changes_before_power" : "review_before_power",
-    findings,
-    warnings,
-    checks,
   };
 }
 
