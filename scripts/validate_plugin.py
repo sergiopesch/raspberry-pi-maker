@@ -15,10 +15,11 @@ FRONTMATTER_PATTERN = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 CODE_BLOCK_PATTERN = re.compile(r"```(?P<lang>[A-Za-z0-9_-]*)\n(?P<code>.*?)\n```", re.DOTALL)
 PLUGIN_ID = "raspberry-pi-maker"
-PACKAGE_VERSION = "1.2.0"
+PACKAGE_VERSION = "1.2.1"
 PLUGIN_ICON = "https://raw.githubusercontent.com/sergiopesch/raspberry-pi-maker/master/assets/raspberry-pi-maker-hero.png"
 MIN_OPENCLAW_VERSION = "2026.5.22"
 MIN_NODE_VERSION = ">=22"
+CLAWHUB_SOURCE_COMMIT = "a230d962db64019462c2c8ee400755eb92169908"
 TOOL_NAMES = {
     "pi_project_plan",
     "pi_resource_search",
@@ -104,6 +105,10 @@ def validate_package_json() -> list[str]:
     dependencies = manifest.get("dependencies")
     if not isinstance(dependencies, dict) or dependencies.get("typebox") != "^1.1.38":
         issues.append(error('package.json dependencies.typebox must be "^1.1.38"'))
+
+    dev_dependencies = manifest.get("devDependencies")
+    if not isinstance(dev_dependencies, dict) or dev_dependencies.get("openclaw") != "2026.6.11":
+        issues.append(error('package.json devDependencies.openclaw must pin "2026.6.11"'))
 
     openclaw = manifest.get("openclaw")
     if not isinstance(openclaw, dict):
@@ -265,6 +270,43 @@ def validate_release_files() -> list[str]:
             issues.append(error("assets/raspberry-pi-maker-hero.png must be a PNG image"))
         if hero_path.stat().st_size > 3_000_000:
             issues.append(error("hero image should stay under 3 MB for README and package usability"))
+
+    return issues
+
+
+def validate_publish_workflow() -> list[str]:
+    path = ROOT / ".github" / "workflows" / "package-publish.yml"
+    try:
+        workflow = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [error("missing .github/workflows/package-publish.yml")]
+
+    issues: list[str] = []
+    required_snippets = [
+        "workflow_dispatch:",
+        "id-token: write",
+        "changelog:",
+        "required: true",
+        "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+        "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+        f"ref: {CLAWHUB_SOURCE_COMMIT}",
+        "bun install --frozen-lockfile",
+        "package publish .",
+        "--categories tools",
+        '--topics "Raspberry Pi,GPIO,electronics,maker,hardware"',
+        '--changelog "$RELEASE_CHANGELOG"',
+        "--json",
+    ]
+    for snippet in required_snippets:
+        if snippet not in workflow:
+            issues.append(error(f"trusted publish workflow missing invariant: {snippet}"))
+
+    for forbidden in ["CLAWHUB_TOKEN", "secrets.", "@main", "@master"]:
+        if forbidden in workflow:
+            issues.append(error(f"trusted publish workflow must not contain {forbidden!r}"))
+
+    if "pull_request:" in workflow or re.search(r"^\s+push:\s*$", workflow, re.MULTILINE):
+        issues.append(error("trusted OIDC publishing must remain workflow_dispatch-only"))
 
     return issues
 
@@ -638,6 +680,7 @@ def validate_reference_safety() -> list[str]:
 def main() -> int:
     checks = [
         ("release files", validate_release_files),
+        ("publish workflow", validate_publish_workflow),
         ("package", validate_package_json),
         ("manifest", validate_openclaw_manifest),
         ("entrypoint", validate_entrypoint),
