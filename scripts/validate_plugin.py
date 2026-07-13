@@ -19,7 +19,6 @@ PACKAGE_VERSION = "1.2.1"
 PLUGIN_ICON = "https://raw.githubusercontent.com/sergiopesch/raspberry-pi-maker/master/assets/raspberry-pi-maker-hero.png"
 MIN_OPENCLAW_VERSION = "2026.5.22"
 MIN_NODE_VERSION = ">=22"
-CLAWHUB_SOURCE_COMMIT = "a230d962db64019462c2c8ee400755eb92169908"
 TOOL_NAMES = {
     "pi_project_plan",
     "pi_resource_search",
@@ -285,17 +284,8 @@ def validate_publish_workflow() -> list[str]:
     required_snippets = [
         "workflow_dispatch:",
         "id-token: write",
-        "changelog:",
-        "required: true",
-        "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-        "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
-        f"ref: {CLAWHUB_SOURCE_COMMIT}",
-        "bun install --frozen-lockfile",
-        "package publish .",
-        "--categories tools",
-        '--topics "Raspberry Pi,GPIO,electronics,maker,hardware"',
-        '--changelog "$RELEASE_CHANGELOG"',
-        "--json",
+        "uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.23.1",
+        "dry_run: false",
     ]
     for snippet in required_snippets:
         if snippet not in workflow:

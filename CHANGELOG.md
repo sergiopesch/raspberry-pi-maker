@@ -2,10 +2,10 @@
 
 ## 1.2.1 - 2026-07-13
 
-- Publish the ClawHub listing under Tools with focused Raspberry Pi, GPIO,
-  electronics, maker, and hardware topics.
-- Keep releases secretless and auditable through the existing GitHub OIDC
-  trusted-publisher identity.
+- Declare the OpenClaw development dependency so clean installs can reproduce
+  plugin validation and packaging checks.
+- Keep releases on ClawHub's supported secretless GitHub OIDC workflow while
+  catalog-metadata support is completed upstream.
 
 ## 1.2.0 - 2026-07-13
 
