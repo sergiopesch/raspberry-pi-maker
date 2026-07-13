@@ -720,7 +720,7 @@ export {
 export default defineToolPlugin({
   id: "raspberry-pi-maker",
   name: "Raspberry Pi Maker",
-  description: "Raspberry Pi lifecycle guidance, safe wiring checks, and authoritative board, component, datasheet, and software resources.",
+  description: "Plan, wire, debug, and ship Raspberry Pi projects with authoritative docs and practical safety checks.",
   tools: (tool) => [
     tool({
       name: "pi_project_plan",

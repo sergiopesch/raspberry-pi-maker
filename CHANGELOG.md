@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 - 2026-07-13
+
+- Replace the long release-oriented README with a concise builder-first page.
+- Use a durable public URL for the ClawHub hero image.
+- Keep installation, capabilities, safety boundaries, and development checks easy to scan.
+
 ## 1.1.0 - 2026-07-13
 
 - Add a provenance-aware catalog of 54 authoritative Raspberry Pi board,

@@ -15,7 +15,7 @@ FRONTMATTER_PATTERN = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 CODE_BLOCK_PATTERN = re.compile(r"```(?P<lang>[A-Za-z0-9_-]*)\n(?P<code>.*?)\n```", re.DOTALL)
 PLUGIN_ID = "raspberry-pi-maker"
-PACKAGE_VERSION = "1.1.0"
+PACKAGE_VERSION = "1.1.1"
 MIN_OPENCLAW_VERSION = "2026.5.22"
 MIN_NODE_VERSION = ">=22"
 TOOL_NAMES = {
@@ -228,23 +228,20 @@ def validate_release_files() -> list[str]:
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8") if (ROOT / "README.md").is_file() else ""
     for phrase in [
-        "assets/raspberry-pi-maker-hero.png",
-        "Install From npm",
-        "Publish Checklist",
-        "Safety Scope",
-        "Contributing",
-        "Security",
-        "License",
-        "npm pack --dry-run",
-        "prepublishOnly",
-        "OpenClaw Tools",
-        "Templates And Examples",
+        "https://raw.githubusercontent.com/sergiopesch/raspberry-pi-maker/master/assets/raspberry-pi-maker-hero.png",
+        "openclaw plugins install clawhub:raspberry-pi-maker",
+        "Safety scope",
+        "OpenClaw tools",
         "pi_wiring_safety_check",
         "pi_laptop_discovery_snapshot",
         "pi_resource_search",
         "pi_board_compare",
         "pi_lifecycle_guide",
-        "Authoritative Resource Catalog",
+        "Publicly accessible documentation is not necessarily public domain",
+        "npm run plugin:validate",
+        "Contributing",
+        "Security",
+        "MIT",
     ]:
         if phrase not in readme:
             issues.append(error(f"README.md missing public release section or phrase: {phrase}"))
