@@ -1,59 +1,11 @@
-import { execFileSync } from "node:child_process";
-import { readdirSync } from "node:fs";
-import { platform, release } from "node:os";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
+import { networkInterfaces, platform, release } from "node:os";
 
-const DEFAULT_COMMAND_TIMEOUT_MS = 3000;
-const SAFE_DISCOVERY_COMMANDS = [
-  { id: "usb", command: "lsusb", args: [], purpose: "USB devices" },
-  { id: "block", command: "lsblk", args: ["--json", "-o", "NAME,MODEL,SIZE,TRAN,TYPE"], purpose: "Block devices" },
-  { id: "links", command: "ip", args: ["-brief", "link"], purpose: "Network interface states" },
-  { id: "hostname", command: "getent", args: ["hosts", "raspberrypi.local"], purpose: "Default Pi hostname lookup", timeoutMs: 1500 },
-  { id: "network-manager", command: "nmcli", args: ["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"], purpose: "NetworkManager device states" },
-];
-const SENSITIVE_DISCOVERY_COMMANDS = [
-  { id: "addresses", command: "ip", args: ["-brief", "addr"], purpose: "Network addresses" },
-  { id: "neighbors", command: "ip", args: ["neigh", "show"], purpose: "Neighbor table" },
-  { id: "connections", command: "nmcli", args: ["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"], purpose: "NetworkManager connection details" },
-];
+const MAX_FIELD_LENGTH = 512;
 
-function truncateText(text, maxLength) {
+function truncateText(text, maxLength = MAX_FIELD_LENGTH) {
   if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength)}\n...<truncated>`;
-}
-
-function runReadOnlyCommand({ command, args, purpose, timeoutMs, id }, maxOutputLength) {
-  try {
-    const stdout = execFileSync(command, args, {
-      encoding: "utf8",
-      maxBuffer: 128 * 1024,
-      shell: false,
-      timeout: timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
-    });
-    return {
-      id,
-      command,
-      args,
-      purpose,
-      ok: true,
-      exitCode: 0,
-      stdout: truncateText(stdout.trim(), maxOutputLength),
-      stderr: "",
-    };
-  } catch (error) {
-    const stdout = typeof error.stdout === "string" ? error.stdout : String(error.stdout ?? "");
-    const stderr = typeof error.stderr === "string" ? error.stderr : String(error.stderr ?? "");
-    return {
-      id,
-      command,
-      args,
-      purpose,
-      ok: false,
-      exitCode: Number.isInteger(error.status) ? error.status : null,
-      error: error.code === "ENOENT" ? "command_not_found" : error.message,
-      stdout: truncateText(stdout.trim(), maxOutputLength),
-      stderr: truncateText(stderr.trim(), maxOutputLength),
-    };
-  }
+  return `${text.slice(0, maxLength)}...<truncated>`;
 }
 
 function readDirectoryEntries(path) {
@@ -64,6 +16,83 @@ function readDirectoryEntries(path) {
   }
 }
 
+function readText(path) {
+  try {
+    return truncateText(readFileSync(path, "utf8").replaceAll("\u0000", "").trim());
+  } catch {
+    return "";
+  }
+}
+
+function collectHostBoard() {
+  const model = readText("/proc/device-tree/model");
+  const compatible = readText("/proc/device-tree/compatible");
+  return { model, compatible };
+}
+
+function collectUsbDevices() {
+  return readDirectoryEntries("/sys/bus/usb/devices")
+    .map((entry) => {
+      const root = `/sys/bus/usb/devices/${entry}`;
+      const vendorId = readText(`${root}/idVendor`);
+      const productId = readText(`${root}/idProduct`);
+      if (!vendorId || !productId) return null;
+      return {
+        busPath: entry,
+        vendorId,
+        productId,
+        manufacturer: readText(`${root}/manufacturer`),
+        product: readText(`${root}/product`),
+      };
+    })
+    .filter(Boolean);
+}
+
+function collectBlockDevices() {
+  return readDirectoryEntries("/sys/class/block").map((name) => {
+    const root = `/sys/class/block/${name}`;
+    const sectors = Number.parseInt(readText(`${root}/size`), 10);
+    let transport = "unknown";
+    try {
+      const devicePath = realpathSync(`${root}/device`).toLowerCase();
+      if (devicePath.includes("/usb")) transport = "usb";
+      else if (devicePath.includes("/nvme")) transport = "nvme";
+      else if (devicePath.includes("/mmc")) transport = "mmc";
+      else if (devicePath.includes("/ata")) transport = "ata";
+    } catch {
+      // Virtual and partition devices may not expose a device link.
+    }
+    return {
+      name,
+      model: readText(`${root}/device/model`),
+      removable: readText(`${root}/removable`) === "1",
+      partition: Boolean(readText(`${root}/partition`)),
+      transport,
+      sizeBytes: Number.isSafeInteger(sectors) ? sectors * 512 : null,
+    };
+  });
+}
+
+function collectNetworkLinks() {
+  const addresses = networkInterfaces();
+  const names = new Set([
+    ...readDirectoryEntries("/sys/class/net"),
+    ...Object.keys(addresses),
+  ]);
+  return [...names].sort().map((name) => ({
+    name,
+    state: readText(`/sys/class/net/${name}/operstate`) || "unknown",
+    addresses: (addresses[name] ?? []).map((address) => ({
+      address: address.address,
+      cidr: address.cidr,
+      family: address.family,
+      internal: address.internal,
+      mac: address.mac,
+      scopeid: address.scopeid,
+    })),
+  }));
+}
+
 function collectSerialDevices() {
   const direct = readDirectoryEntries("/dev")
     .filter((entry) => /^(ttyACM|ttyUSB|ttyAMA)/.test(entry))
@@ -72,75 +101,98 @@ function collectSerialDevices() {
   return { direct, stableIds };
 }
 
-function parseBlockSummary(stdout) {
+const NATIVE_PROBES = [
+  { id: "host-board", purpose: "Local board identity", collector: collectHostBoard },
+  { id: "usb", purpose: "USB devices", collector: collectUsbDevices },
+  { id: "block", purpose: "Block devices", collector: collectBlockDevices },
+  { id: "links", purpose: "Network interface states", collector: collectNetworkLinks },
+];
+
+function runNativeProbe({ id, purpose, collector }) {
   try {
-    const devices = JSON.parse(stdout).blockdevices ?? [];
-    const flattened = [];
-    const visit = (items) => {
-      for (const item of items) {
-        flattened.push(item);
-        if (Array.isArray(item.children)) visit(item.children);
-      }
-    };
-    visit(devices);
+    return { id, purpose, ok: true, data: collector() };
+  } catch (error) {
     return {
-      deviceCount: flattened.length,
-      diskCount: flattened.filter((device) => device.type === "disk").length,
-      usbDeviceCount: flattened.filter((device) => device.tran === "usb").length,
+      id,
+      purpose,
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      data: null,
     };
-  } catch {
-    return { deviceCount: stdout.split("\n").filter(Boolean).length, parseError: true };
   }
 }
 
-function summarizeCommand(result) {
-  const lines = result.stdout.split("\n").filter(Boolean);
+function summarizeProbe(result) {
   const base = {
     id: result.id,
     purpose: result.purpose,
+    method: "native-node",
     ok: result.ok,
-    ...(result.ok ? {} : { error: result.error ?? "command_failed" }),
+    ...(result.ok ? {} : { error: result.error ?? "probe_failed" }),
   };
-
   if (!result.ok) return base;
-  if (result.id === "usb") {
+
+  if (result.id === "host-board") {
     return {
       ...base,
       summary: {
-        deviceCount: lines.length,
-        raspberryPiIdentifierPresent: /raspberry pi|pi foundation|bcm27|rp2 boot/i.test(result.stdout),
+        raspberryPiHost: /raspberry pi|brcm,bcm/i.test(`${result.data.model} ${result.data.compatible}`),
+        model: result.data.model || null,
       },
     };
   }
-  if (result.id === "block") return { ...base, summary: parseBlockSummary(result.stdout) };
+  if (result.id === "usb") {
+    const text = JSON.stringify(result.data);
+    return {
+      ...base,
+      summary: {
+        deviceCount: result.data.length,
+        raspberryPiIdentifierPresent: /raspberry pi|pi foundation|2e8a|bcm27|rp2/i.test(text),
+      },
+    };
+  }
+  if (result.id === "block") {
+    return {
+      ...base,
+      summary: {
+        deviceCount: result.data.length,
+        diskCount: result.data.filter((device) => !device.partition).length,
+        removableCount: result.data.filter((device) => device.removable).length,
+        usbDeviceCount: result.data.filter((device) => device.transport === "usb").length,
+      },
+    };
+  }
   if (result.id === "links") {
-    const states = lines.map((line) => line.trim().split(/\s+/)[1]).filter(Boolean);
-    return { ...base, summary: { interfaceCount: lines.length, states: [...new Set(states)].sort() } };
+    const states = result.data.map((link) => link.state).filter(Boolean);
+    return {
+      ...base,
+      summary: {
+        interfaceCount: result.data.length,
+        states: [...new Set(states)].sort(),
+      },
+    };
   }
-  if (result.id === "hostname") return { ...base, summary: { raspberryPiLocalResolved: lines.length > 0 } };
-  if (result.id === "network-manager") {
-    const states = lines.map((line) => line.split(":")[2]).filter(Boolean);
-    return { ...base, summary: { deviceCount: lines.length, states: [...new Set(states)].sort() } };
-  }
-  return { ...base, summary: { lineCount: lines.length } };
+  return { ...base, summary: {} };
 }
 
-function inferPiHints({ commands, serialDevices }) {
-  const command = (id) => commands.find((entry) => entry.id === id)?.stdout ?? "";
+function inferPiHints({ probes, serialDevices }) {
+  const probeData = (id) => probes.find((entry) => entry.id === id)?.data;
+  const board = probeData("host-board") ?? {};
+  const usb = probeData("usb") ?? [];
   const hints = [];
 
-  if (/raspberry pi|pi foundation|bcm27|rp2 boot/i.test(command("usb"))) {
+  if (/raspberry pi|brcm,bcm/i.test(`${board.model ?? ""} ${board.compatible ?? ""}`)) {
+    hints.push({
+      confidence: "high",
+      source: "Linux device tree",
+      message: `This host identifies as ${board.model || "a Raspberry Pi"}.`,
+    });
+  }
+  if (/raspberry pi|pi foundation|2e8a|bcm27|rp2/i.test(JSON.stringify(usb))) {
     hints.push({
       confidence: "high",
       source: "USB identifiers",
       message: "USB discovery contains a Raspberry Pi or Raspberry Pi Foundation identifier.",
-    });
-  }
-  if (command("hostname").trim()) {
-    hints.push({
-      confidence: "medium",
-      source: "raspberrypi.local lookup",
-      message: "The default raspberrypi.local hostname resolved on this laptop.",
     });
   }
   if (serialDevices.direct.length > 0 || serialDevices.stableIds.length > 0) {
@@ -148,13 +200,6 @@ function inferPiHints({ commands, serialDevices }) {
       confidence: "medium",
       source: "serial device inventory",
       message: "Serial-style devices are present. They may be Pi UART/USB gadget links, microcontrollers, or adapters.",
-    });
-  }
-  if (/169\.254\.|usb|ether/i.test(command("neighbors"))) {
-    hints.push({
-      confidence: "low",
-      source: "neighbor summary",
-      message: "Opt-in neighbor discovery contains a link-local or USB/Ethernet clue that may belong to a directly connected Pi.",
     });
   }
   return hints;
@@ -175,45 +220,39 @@ function publicSerialSummary(serialDevices, includeRawOutput) {
 function laptopDiscoverySnapshot(
   { includeRawOutput = false } = {},
   {
-    commandRunner = runReadOnlyCommand,
+    probeDefinitions = NATIVE_PROBES,
+    probeRunner = runNativeProbe,
     serialCollector = collectSerialDevices,
     hostInfo = () => ({ platform: platform(), kernel: release(), node: process.version }),
   } = {},
 ) {
-  const definitions = includeRawOutput
-    ? [...SAFE_DISCOVERY_COMMANDS, ...SENSITIVE_DISCOVERY_COMMANDS]
-    : SAFE_DISCOVERY_COMMANDS;
-  const maxOutputLength = includeRawOutput ? 16000 : 8000;
-  const commands = definitions.map((definition) => commandRunner(definition, maxOutputLength));
+  const probes = probeDefinitions.map((definition) => probeRunner(definition));
   const serialDevices = serialCollector();
-  const piHints = inferPiHints({ commands, serialDevices });
-  const publicCommands = commands.map((result) => includeRawOutput
+  const piHints = inferPiHints({ probes, serialDevices });
+  const publicProbes = probes.map((result) => includeRawOutput
     ? {
         id: result.id,
-        command: result.command,
-        args: result.args,
         purpose: result.purpose,
+        method: "native-node",
         ok: result.ok,
-        exitCode: result.exitCode,
-        stdout: result.stdout,
-        stderr: result.stderr,
+        data: result.data,
         ...(result.error ? { error: result.error } : {}),
       }
-    : summarizeCommand(result));
+    : summarizeProbe(result));
 
   return {
     generatedAt: new Date().toISOString(),
     host: hostInfo(),
     privacy: includeRawOutput
-      ? "Raw local details were explicitly requested and may contain device identifiers, mount information, IP or MAC addresses, and network connection names."
-      : "Default output is structured and redacted: no command stdout, IP or MAC addresses, connection names, mountpoints, or stable USB serial identifiers are returned.",
-    safetyBoundary: "Read-only laptop discovery. No GPIO, disks, firmware, mounts, SSH sessions, or network scans were modified or started.",
+      ? "Raw local details were explicitly requested and may contain device identifiers, storage details, IP or MAC addresses, and interface names."
+      : "Default output is structured and redacted: no IP or MAC addresses, interface names, device paths, storage models, or stable USB serial identifiers are returned.",
+    safetyBoundary: "Read-only native Node.js discovery. No subprocesses, GPIO, disks, firmware, mounts, SSH sessions, or network scans were modified or started.",
     serialDevices: publicSerialSummary(serialDevices, includeRawOutput),
     piHints,
-    commands: publicCommands,
+    commands: publicProbes,
     nextSteps: [
       "If no Pi is detected, connect power and data separately with a known data-capable USB cable or Ethernet.",
-      "If raspberrypi.local resolves, ask before opening SSH and confirm the intended target and user.",
+      "If the Pi is reachable, ask before opening SSH and confirm the intended target and user.",
       "If a serial device appears, ask before opening it and identify the expected adapter or board.",
       "If removable storage appears, do not mount or write to it until the user confirms the device.",
     ],
@@ -221,9 +260,8 @@ function laptopDiscoverySnapshot(
 }
 
 export {
-  SAFE_DISCOVERY_COMMANDS,
-  SENSITIVE_DISCOVERY_COMMANDS,
+  NATIVE_PROBES,
   laptopDiscoverySnapshot,
-  runReadOnlyCommand,
-  summarizeCommand,
+  runNativeProbe,
+  summarizeProbe,
 };

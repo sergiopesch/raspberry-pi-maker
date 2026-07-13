@@ -15,7 +15,7 @@ FRONTMATTER_PATTERN = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 CODE_BLOCK_PATTERN = re.compile(r"```(?P<lang>[A-Za-z0-9_-]*)\n(?P<code>.*?)\n```", re.DOTALL)
 PLUGIN_ID = "raspberry-pi-maker"
-PACKAGE_VERSION = "1.2.1"
+PACKAGE_VERSION = "1.2.2"
 PLUGIN_ICON = "https://raw.githubusercontent.com/sergiopesch/raspberry-pi-maker/master/assets/raspberry-pi-maker-hero.png"
 MIN_OPENCLAW_VERSION = "2026.5.22"
 MIN_NODE_VERSION = ">=22"
@@ -418,6 +418,21 @@ def validate_entrypoint() -> list[str]:
     return issues
 
 
+def validate_runtime_security() -> list[str]:
+    issues: list[str] = []
+    forbidden_patterns = {
+        "node:" + "child_" + "process": "runtime code must not import the subprocess module",
+        "child_" + "process": "runtime code must not import the subprocess module",
+    }
+    runtime_paths = [ROOT / "index.js", *sorted((ROOT / "src").glob("*.js"))]
+    for path in runtime_paths:
+        text = path.read_text(encoding="utf-8")
+        for pattern, message in forbidden_patterns.items():
+            if pattern in text:
+                issues.append(error(f"{path.relative_to(ROOT)}: {message} ({pattern!r})"))
+    return issues
+
+
 def validate_resource_catalog() -> list[str]:
     catalog, issues = load_json(ROOT / "data" / "resources.json")
     if catalog is None:
@@ -700,6 +715,7 @@ def main() -> int:
         ("package", validate_package_json),
         ("manifest", validate_openclaw_manifest),
         ("entrypoint", validate_entrypoint),
+        ("runtime security", validate_runtime_security),
         ("resource catalog", validate_resource_catalog),
         ("skills", validate_skills),
         ("markdown links", validate_markdown_links),
