@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 - 2026-07-13
+
+- Parse BCM and physical pin expressions without silently crossing numbering schemes.
+- Make wiring checks conservative, negation-aware, and explicit about their limits.
+- Add honest no-match search, typo tolerance, exact board aliases, and lifecycle-linked resources.
+- Expand the reviewed catalog from 54 to 78 sources, including legacy boards, official accessories, and popular maker components.
+- Redact local addresses, identifiers, mount details, and connection names from discovery by default.
+- Split runtime logic into tested modules and load the plugin lazily after Gateway startup.
+- Add weekly resource-link checks and trusted GitHub OIDC publishing for auditable ClawHub releases.
+
 ## 1.1.1 - 2026-07-13
 
 - Replace the long release-oriented README with a concise builder-first page.

@@ -15,7 +15,7 @@ FRONTMATTER_PATTERN = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 CODE_BLOCK_PATTERN = re.compile(r"```(?P<lang>[A-Za-z0-9_-]*)\n(?P<code>.*?)\n```", re.DOTALL)
 PLUGIN_ID = "raspberry-pi-maker"
-PACKAGE_VERSION = "1.1.1"
+PACKAGE_VERSION = "1.2.0"
 MIN_OPENCLAW_VERSION = "2026.5.22"
 MIN_NODE_VERSION = ">=22"
 TOOL_NAMES = {
@@ -28,7 +28,7 @@ TOOL_NAMES = {
     "pi_experiment_log_template",
     "pi_laptop_discovery_snapshot",
 }
-IGNORED_DIRS = {".git", "node_modules"}
+IGNORED_DIRS = {".git", "node_modules", "reports"}
 
 
 def iter_repo_markdown() -> list[Path]:
