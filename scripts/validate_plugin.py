@@ -15,6 +15,28 @@ FRONTMATTER_PATTERN = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 CODE_BLOCK_PATTERN = re.compile(r"```(?P<lang>[A-Za-z0-9_-]*)\n(?P<code>.*?)\n```", re.DOTALL)
 PLUGIN_ID = "raspberry-pi-maker"
+PACKAGE_VERSION = "1.1.0"
+MIN_OPENCLAW_VERSION = "2026.5.22"
+MIN_NODE_VERSION = ">=22"
+TOOL_NAMES = {
+    "pi_project_plan",
+    "pi_resource_search",
+    "pi_board_compare",
+    "pi_lifecycle_guide",
+    "pi_pin_lookup",
+    "pi_wiring_safety_check",
+    "pi_experiment_log_template",
+    "pi_laptop_discovery_snapshot",
+}
+IGNORED_DIRS = {".git", "node_modules"}
+
+
+def iter_repo_markdown() -> list[Path]:
+    return [
+        path
+        for path in sorted(ROOT.glob("**/*.md"))
+        if not any(part in IGNORED_DIRS for part in path.relative_to(ROOT).parts)
+    ]
 
 
 def error(message: str) -> str:
@@ -59,6 +81,8 @@ def validate_package_json() -> list[str]:
 
     if manifest.get("name") != PLUGIN_ID:
         issues.append(error(f"package.json name must be {PLUGIN_ID!r}"))
+    if manifest.get("version") != PACKAGE_VERSION:
+        issues.append(error(f"package.json version must be {PACKAGE_VERSION!r}"))
     if manifest.get("type") != "module":
         issues.append(error('package.json type must be "module"'))
     if manifest.get("main") != "./index.js" or manifest.get("exports") != "./index.js":
@@ -67,14 +91,18 @@ def validate_package_json() -> list[str]:
         issues.append(error("package.json must not be private for public sharing"))
 
     engines = manifest.get("engines")
-    if not isinstance(engines, dict) or not engines.get("node"):
-        issues.append(error("package.json engines.node is required"))
+    if not isinstance(engines, dict) or engines.get("node") != MIN_NODE_VERSION:
+        issues.append(error(f"package.json engines.node must be {MIN_NODE_VERSION!r}"))
 
     publish_config = manifest.get("publishConfig")
     if not isinstance(publish_config, dict) or publish_config.get("access") != "public":
         issues.append(error('package.json publishConfig.access must be "public"'))
     if manifest.get("license") != "MIT":
         issues.append(error('package.json license must be "MIT"'))
+
+    dependencies = manifest.get("dependencies")
+    if not isinstance(dependencies, dict) or dependencies.get("typebox") != "^1.1.38":
+        issues.append(error('package.json dependencies.typebox must be "^1.1.38"'))
 
     openclaw = manifest.get("openclaw")
     if not isinstance(openclaw, dict):
@@ -84,22 +112,49 @@ def validate_package_json() -> list[str]:
         if extensions != ["./index.js"]:
             issues.append(error('package.json openclaw.extensions must equal ["./index.js"]'))
         compat = openclaw.get("compat")
-        if not isinstance(compat, dict) or not compat.get("pluginApi"):
-            issues.append(error("package.json openclaw.compat.pluginApi is required"))
-        if not isinstance(compat, dict) or not compat.get("minGatewayVersion"):
-            issues.append(error("package.json openclaw.compat.minGatewayVersion is required"))
+        if not isinstance(compat, dict) or compat.get("pluginApi") != f">={MIN_OPENCLAW_VERSION}":
+            issues.append(
+                error(f"package.json openclaw.compat.pluginApi must be >={MIN_OPENCLAW_VERSION}")
+            )
+        if not isinstance(compat, dict) or compat.get("minGatewayVersion") != MIN_OPENCLAW_VERSION:
+            issues.append(
+                error(f"package.json openclaw.compat.minGatewayVersion must be {MIN_OPENCLAW_VERSION}")
+            )
+        build = openclaw.get("build")
+        if not isinstance(build, dict):
+            issues.append(error("package.json openclaw.build is required"))
+        else:
+            if build.get("openclawVersion") != MIN_OPENCLAW_VERSION:
+                issues.append(
+                    error(f"package.json openclaw.build.openclawVersion must be {MIN_OPENCLAW_VERSION}")
+                )
+            if build.get("pluginSdkVersion") != MIN_OPENCLAW_VERSION:
+                issues.append(
+                    error(f"package.json openclaw.build.pluginSdkVersion must be {MIN_OPENCLAW_VERSION}")
+                )
 
     scripts = manifest.get("scripts")
     if not isinstance(scripts, dict) or scripts.get("test") != "python3 scripts/validate_plugin.py":
         issues.append(error("package.json test script must run scripts/validate_plugin.py"))
-    elif scripts.get("prepack") != "npm test && node --check index.js":
-        issues.append(error("package.json prepack must run validation and JS syntax checks"))
-    elif scripts.get("prepublishOnly") != "npm test && node --check index.js && npm pack --dry-run":
-        issues.append(error("package.json prepublishOnly must run validation, JS check, and pack dry-run"))
+    else:
+        expected_scripts = {
+            "plugin:build": "openclaw plugins build --root . --entry ./index.js",
+            "plugin:validate": (
+                "openclaw plugins build --root . --entry ./index.js --check && "
+                "openclaw plugins validate --root . --entry ./index.js"
+            ),
+            "prepack": "npm test && node --check index.js && npm run plugin:validate",
+            "prepublishOnly": (
+                "npm test && node --check index.js && npm run plugin:validate && npm pack --dry-run"
+            ),
+        }
+        for script_name, expected in expected_scripts.items():
+            if scripts.get(script_name) != expected:
+                issues.append(error(f"package.json {script_name} script is stale"))
 
     peer_deps = manifest.get("peerDependencies")
-    if not isinstance(peer_deps, dict) or "openclaw" not in peer_deps:
-        issues.append(error("package.json peerDependencies.openclaw is required"))
+    if not isinstance(peer_deps, dict) or peer_deps.get("openclaw") != f">={MIN_OPENCLAW_VERSION}":
+        issues.append(error(f"package.json peerDependencies.openclaw must be >={MIN_OPENCLAW_VERSION}"))
 
     for key in ["homepage"]:
         issues.extend(validate_url(manifest.get(key), f"package.json {key}"))
@@ -116,7 +171,10 @@ def validate_package_json() -> list[str]:
         "openclaw.plugin.json",
         "assets/**",
         "skills/**",
+        "data/**",
         "references/**",
+        "templates/**",
+        "examples/**",
         "scripts/validate_plugin.py",
         "README.md",
         "LICENSE",
@@ -179,13 +237,21 @@ def validate_release_files() -> list[str]:
         "License",
         "npm pack --dry-run",
         "prepublishOnly",
+        "OpenClaw Tools",
+        "Templates And Examples",
+        "pi_wiring_safety_check",
+        "pi_laptop_discovery_snapshot",
+        "pi_resource_search",
+        "pi_board_compare",
+        "pi_lifecycle_guide",
+        "Authoritative Resource Catalog",
     ]:
         if phrase not in readme:
             issues.append(error(f"README.md missing public release section or phrase: {phrase}"))
 
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8") if (ROOT / "CHANGELOG.md").is_file() else ""
-    if "# Changelog" not in changelog or "1.0.0" not in changelog:
-        issues.append(error("CHANGELOG.md must include a 1.0.0 entry"))
+    if "# Changelog" not in changelog or PACKAGE_VERSION not in changelog or "1.0.0" not in changelog:
+        issues.append(error(f"CHANGELOG.md must include {PACKAGE_VERSION} and 1.0.0 entries"))
 
     security = (ROOT / "SECURITY.md").read_text(encoding="utf-8") if (ROOT / "SECURITY.md").is_file() else ""
     for phrase in ["# Security Policy", "Raspberry Pi Maker", "Hardware Safety"]:
@@ -210,6 +276,8 @@ def validate_openclaw_manifest() -> list[str]:
 
     if manifest.get("id") != PLUGIN_ID:
         issues.append(error(f"openclaw.plugin.json id must be {PLUGIN_ID!r}"))
+    if manifest.get("version") != PACKAGE_VERSION:
+        issues.append(error(f"openclaw.plugin.json version must be {PACKAGE_VERSION!r}"))
 
     for key in ["name", "description", "version"]:
         value = manifest.get(key)
@@ -221,6 +289,18 @@ def validate_openclaw_manifest() -> list[str]:
         issues.append(error("openclaw.plugin.json configSchema must be an object"))
     elif schema.get("type") != "object" or schema.get("additionalProperties") is not False:
         issues.append(error("openclaw.plugin.json configSchema must be a closed object schema"))
+
+    activation = manifest.get("activation")
+    if not isinstance(activation, dict) or activation.get("onStartup") is not True:
+        issues.append(error("openclaw.plugin.json activation.onStartup must be true"))
+
+    contracts = manifest.get("contracts")
+    if not isinstance(contracts, dict):
+        issues.append(error("openclaw.plugin.json contracts must be an object"))
+    else:
+        tools = contracts.get("tools")
+        if not isinstance(tools, list) or set(tools) != TOOL_NAMES:
+            issues.append(error(f"openclaw.plugin.json contracts.tools must equal {sorted(TOOL_NAMES)}"))
 
     skills = manifest.get("skills")
     if skills != ["skills"]:
@@ -235,6 +315,9 @@ def validate_openclaw_manifest() -> list[str]:
         "name",
         "description",
         "version",
+        "activation",
+        "contracts",
+        "toolMetadata",
         "skills",
         "configSchema",
     }
@@ -254,10 +337,19 @@ def validate_entrypoint() -> list[str]:
 
     issues: list[str] = []
     required_snippets = [
-        "const plugin =",
+        'import { Type } from "typebox"',
+        'import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin"',
+        "defineToolPlugin({",
         f'id: "{PLUGIN_ID}"',
-        "register()",
-        "export default plugin",
+        "pi_project_plan",
+        "pi_resource_search",
+        "pi_board_compare",
+        "pi_lifecycle_guide",
+        "pi_pin_lookup",
+        "pi_wiring_safety_check",
+        "pi_experiment_log_template",
+        "pi_laptop_discovery_snapshot",
+        "export default defineToolPlugin",
     ]
     for snippet in required_snippets:
         if snippet not in text:
@@ -265,9 +357,124 @@ def validate_entrypoint() -> list[str]:
     return issues
 
 
+def validate_resource_catalog() -> list[str]:
+    catalog, issues = load_json(ROOT / "data" / "resources.json")
+    if catalog is None:
+        return issues
+
+    if catalog.get("schemaVersion") != 1:
+        issues.append(error("data/resources.json schemaVersion must be 1"))
+
+    reviewed_on = catalog.get("reviewedOn")
+    if not isinstance(reviewed_on, str) or not re.fullmatch(r"20\d{2}-\d{2}-\d{2}", reviewed_on):
+        issues.append(error("data/resources.json reviewedOn must use YYYY-MM-DD"))
+
+    policy = catalog.get("policy")
+    if not isinstance(policy, dict):
+        issues.append(error("data/resources.json policy must be an object"))
+    else:
+        for key in ["scope", "copyright", "freshness"]:
+            if not isinstance(policy.get(key), str) or not policy[key].strip():
+                issues.append(error(f"data/resources.json policy.{key} must be a non-empty string"))
+
+    resources = catalog.get("resources")
+    if not isinstance(resources, list):
+        return issues + [error("data/resources.json resources must be an array")]
+
+    allowed_kinds = {"board", "accessory", "component", "datasheet", "software", "learning"}
+    allowed_stages = {
+        "choose", "setup", "design", "build", "code", "test", "debug", "deploy", "maintain", "retire"
+    }
+    seen_ids: set[str] = set()
+    kind_counts = {kind: 0 for kind in allowed_kinds}
+    stage_counts = {stage: 0 for stage in allowed_stages}
+
+    for index, resource in enumerate(resources):
+        label = f"data/resources.json resources[{index}]"
+        if not isinstance(resource, dict):
+            issues.append(error(f"{label} must be an object"))
+            continue
+
+        resource_id = resource.get("id")
+        if not isinstance(resource_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", resource_id):
+            issues.append(error(f"{label}.id must be kebab-case"))
+        elif resource_id in seen_ids:
+            issues.append(error(f"duplicate resource id {resource_id!r}"))
+        else:
+            seen_ids.add(resource_id)
+
+        for key in ["title", "summary", "publisher", "authority", "license"]:
+            if not isinstance(resource.get(key), str) or not resource[key].strip():
+                issues.append(error(f"{label}.{key} must be a non-empty string"))
+
+        kind = resource.get("kind")
+        if kind not in allowed_kinds:
+            issues.append(error(f"{label}.kind must be one of {sorted(allowed_kinds)}"))
+        else:
+            kind_counts[kind] += 1
+
+        stages = resource.get("stages")
+        if not isinstance(stages, list) or not stages or any(stage not in allowed_stages for stage in stages):
+            issues.append(error(f"{label}.stages must contain known lifecycle stages"))
+        else:
+            for stage in set(stages):
+                stage_counts[stage] += 1
+
+        for key in ["topics", "aliases"]:
+            values = resource.get(key)
+            if not isinstance(values, list) or not values or any(not isinstance(value, str) or not value.strip() for value in values):
+                issues.append(error(f"{label}.{key} must be a non-empty string array"))
+
+        issues.extend(validate_url(resource.get("url"), f"{label}.url"))
+        if isinstance(resource.get("url"), str) and not resource["url"].startswith("https://"):
+            issues.append(error(f"{label}.url must use HTTPS"))
+
+        if kind == "component" and not isinstance(resource.get("safety"), str):
+            issues.append(error(f"{label} component entries must include safety guidance"))
+
+        profile = resource.get("profile")
+        if profile is not None:
+            if kind != "board" or not isinstance(profile, dict):
+                issues.append(error(f"{label}.profile is only valid as an object on board entries"))
+            else:
+                required_profile_keys = {
+                    "class", "linux", "realtime", "wireless", "formFactor", "header", "bestFor", "watchouts"
+                }
+                missing_keys = required_profile_keys - set(profile)
+                if missing_keys:
+                    issues.append(error(f"{label}.profile missing {sorted(missing_keys)}"))
+
+    minimum_counts = {"board": 12, "component": 15, "software": 8, "accessory": 5, "datasheet": 5}
+    for kind, minimum in minimum_counts.items():
+        if kind_counts[kind] < minimum:
+            issues.append(error(f"resource catalog needs at least {minimum} {kind} entries"))
+    for stage, count in stage_counts.items():
+        if count == 0:
+            issues.append(error(f"resource catalog has no coverage for lifecycle stage {stage!r}"))
+
+    required_ids = {
+        "rpi-board-catalog",
+        "rpi-product-information-portal",
+        "raspberry-pi-5",
+        "raspberry-pi-zero-2-w",
+        "compute-module-family",
+        "pico-family-docs",
+        "camera-hardware",
+        "touch-display-2",
+        "gpio-zero",
+        "rp2040-datasheet",
+        "rp2350-datasheet",
+    }
+    missing_ids = required_ids - seen_ids
+    if missing_ids:
+        issues.append(error(f"resource catalog missing required coverage ids: {sorted(missing_ids)}"))
+
+    return issues
+
+
 def validate_python_code_blocks() -> list[str]:
     issues: list[str] = []
-    for path in sorted(ROOT.glob("**/*.md")):
+    for path in iter_repo_markdown():
         rel_path = path.relative_to(ROOT)
         text = path.read_text(encoding="utf-8")
         for index, match in enumerate(CODE_BLOCK_PATTERN.finditer(text), start=1):
@@ -352,11 +559,9 @@ def validate_skills() -> list[str]:
 
 def validate_markdown_links() -> list[str]:
     issues: list[str] = []
-    markdown_files = sorted(ROOT.glob("**/*.md"))
+    markdown_files = iter_repo_markdown()
 
     for path in markdown_files:
-        if ".git" in path.relative_to(ROOT).parts:
-            continue
         text = path.read_text(encoding="utf-8")
         for match in LINK_PATTERN.finditer(text):
             target = match.group(1).split("#", 1)[0]
@@ -378,7 +583,7 @@ def validate_reference_safety() -> list[str]:
     issues: list[str] = []
     checked_paths = [
         path
-        for path in sorted(ROOT.glob("**/*.md"))
+        for path in iter_repo_markdown()
         if path.name.upper() != "CONTRIBUTING.MD"
     ]
     all_text = "\n".join(path.read_text(encoding="utf-8") for path in checked_paths)
@@ -425,6 +630,7 @@ def main() -> int:
         ("package", validate_package_json),
         ("manifest", validate_openclaw_manifest),
         ("entrypoint", validate_entrypoint),
+        ("resource catalog", validate_resource_catalog),
         ("skills", validate_skills),
         ("markdown links", validate_markdown_links),
         ("reference safety", validate_reference_safety),

@@ -1,12 +1,29 @@
 {
   "id": "raspberry-pi-maker",
   "name": "Raspberry Pi Maker",
-  "description": "Raspberry Pi hardware project guidance with GPIO-safe wiring, Python examples, and troubleshooting playbooks.",
-  "version": "1.0.0",
-  "skills": ["skills"],
+  "description": "Raspberry Pi lifecycle guidance, safe wiring checks, and authoritative board, component, datasheet, and software resources.",
+  "version": "1.1.0",
+  "skills": [
+    "skills"
+  ],
   "configSchema": {
     "type": "object",
-    "additionalProperties": false,
-    "properties": {}
+    "properties": {},
+    "additionalProperties": false
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "pi_project_plan",
+      "pi_resource_search",
+      "pi_board_compare",
+      "pi_lifecycle_guide",
+      "pi_pin_lookup",
+      "pi_wiring_safety_check",
+      "pi_experiment_log_template",
+      "pi_laptop_discovery_snapshot"
+    ]
   }
 }

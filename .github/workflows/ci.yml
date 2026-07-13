@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        openclaw-version:
+          - "2026.5.22"
+          - "2026.6.11"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package dependencies
+        run: npm ci --ignore-scripts --legacy-peer-deps
+
+      - name: Install OpenClaw host CLI
+        run: npm install --global "openclaw@${{ matrix.openclaw-version }}"
+
+      - name: Validate repository and code syntax
+        run: |
+          npm test
+          node --check index.js
+
+      - name: Validate native plugin metadata
+        run: npm run plugin:validate
+
+      - name: Prove package contents
+        run: npm pack --dry-run

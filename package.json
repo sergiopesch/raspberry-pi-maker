@@ -1,14 +1,14 @@
 {
   "name": "raspberry-pi-maker",
-  "version": "1.0.0",
-  "description": "OpenClaw plugin for Raspberry Pi hardware project guidance, GPIO-safe wiring, Python examples, and troubleshooting.",
+  "version": "1.1.0",
+  "description": "OpenClaw plugin for the complete Raspberry Pi maker lifecycle, with safe wiring guidance and authoritative board, component, datasheet, and software resources.",
   "type": "module",
   "main": "./index.js",
   "exports": "./index.js",
   "license": "MIT",
   "author": "Sergio Pesch",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bugs": {
     "url": "https://github.com/sergiopesch/raspberry-pi-maker/issues"
@@ -33,7 +33,10 @@
     "openclaw.plugin.json",
     "assets/**",
     "skills/**",
+    "data/**",
     "references/**",
+    "templates/**",
+    "examples/**",
     "scripts/validate_plugin.py",
     "README.md",
     "LICENSE",
@@ -42,26 +45,33 @@
     "SECURITY.md"
   ],
   "scripts": {
-    "prepack": "npm test && node --check index.js",
-    "prepublishOnly": "npm test && node --check index.js && npm pack --dry-run",
+    "plugin:build": "openclaw plugins build --root . --entry ./index.js",
+    "plugin:validate": "openclaw plugins build --root . --entry ./index.js --check && openclaw plugins validate --root . --entry ./index.js",
+    "prepack": "npm test && node --check index.js && npm run plugin:validate",
+    "prepublishOnly": "npm test && node --check index.js && npm run plugin:validate && npm pack --dry-run",
     "validate": "python3 scripts/validate_plugin.py",
     "test": "python3 scripts/validate_plugin.py"
   },
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "typebox": "^1.1.38"
+  },
   "peerDependencies": {
-    "openclaw": ">=2026.3.24-beta.2"
+    "openclaw": ">=2026.5.22"
   },
   "openclaw": {
-    "extensions": ["./index.js"],
+    "extensions": [
+      "./index.js"
+    ],
     "compat": {
-      "pluginApi": ">=2026.3.24-beta.2",
-      "minGatewayVersion": "2026.3.24-beta.2"
+      "pluginApi": ">=2026.5.22",
+      "minGatewayVersion": "2026.5.22"
     },
     "build": {
-      "openclawVersion": "2026.4.24",
-      "pluginSdkVersion": "2026.4.24"
+      "openclawVersion": "2026.5.22",
+      "pluginSdkVersion": "2026.5.22"
     }
   }
 }
