@@ -290,8 +290,8 @@ def validate_openclaw_manifest() -> list[str]:
         issues.append(error("openclaw.plugin.json configSchema must be a closed object schema"))
 
     activation = manifest.get("activation")
-    if not isinstance(activation, dict) or activation.get("onStartup") is not True:
-        issues.append(error("openclaw.plugin.json activation.onStartup must be true"))
+    if not isinstance(activation, dict) or activation.get("onStartup") is not False:
+        issues.append(error("openclaw.plugin.json activation.onStartup must be false for lazy tool loading"))
 
     contracts = manifest.get("contracts")
     if not isinstance(contracts, dict):
