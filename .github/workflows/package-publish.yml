@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
@@ -11,6 +12,7 @@ jobs:
   publish:
     uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.23.1
     permissions:
+      actions: read
       contents: read
       id-token: write
     with:
