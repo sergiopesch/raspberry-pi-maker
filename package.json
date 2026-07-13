@@ -1,6 +1,6 @@
 {
   "name": "raspberry-pi-maker",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Plan, wire, debug, and ship Raspberry Pi projects with authoritative docs and practical safety checks.",
   "type": "module",
   "main": "./index.js",
@@ -59,6 +59,9 @@
   },
   "dependencies": {
     "typebox": "^1.1.38"
+  },
+  "devDependencies": {
+    "openclaw": "2026.6.11"
   },
   "peerDependencies": {
     "openclaw": ">=2026.5.22"

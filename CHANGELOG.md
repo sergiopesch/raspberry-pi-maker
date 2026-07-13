@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 - 2026-07-13
+
+- Publish the ClawHub listing under Tools with focused Raspberry Pi, GPIO,
+  electronics, maker, and hardware topics.
+- Keep releases secretless and auditable through the existing GitHub OIDC
+  trusted-publisher identity.
+
 ## 1.2.0 - 2026-07-13
 
 - Parse BCM and physical pin expressions without silently crossing numbering schemes.
