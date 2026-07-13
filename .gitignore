@@ -2,3 +2,4 @@ node_modules/
 *.log
 *.tmp
 raspberry-pi-maker-*.tgz
+reports/

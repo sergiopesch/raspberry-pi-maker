@@ -15,7 +15,8 @@ FRONTMATTER_PATTERN = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 CODE_BLOCK_PATTERN = re.compile(r"```(?P<lang>[A-Za-z0-9_-]*)\n(?P<code>.*?)\n```", re.DOTALL)
 PLUGIN_ID = "raspberry-pi-maker"
-PACKAGE_VERSION = "1.1.0"
+PACKAGE_VERSION = "1.2.0"
+PLUGIN_ICON = "https://raw.githubusercontent.com/sergiopesch/raspberry-pi-maker/master/assets/raspberry-pi-maker-hero.png"
 MIN_OPENCLAW_VERSION = "2026.5.22"
 MIN_NODE_VERSION = ">=22"
 TOOL_NAMES = {
@@ -28,7 +29,7 @@ TOOL_NAMES = {
     "pi_experiment_log_template",
     "pi_laptop_discovery_snapshot",
 }
-IGNORED_DIRS = {".git", "node_modules"}
+IGNORED_DIRS = {".git", "node_modules", "reports"}
 
 
 def iter_repo_markdown() -> list[Path]:
@@ -134,8 +135,8 @@ def validate_package_json() -> list[str]:
                 )
 
     scripts = manifest.get("scripts")
-    if not isinstance(scripts, dict) or scripts.get("test") != "python3 scripts/validate_plugin.py":
-        issues.append(error("package.json test script must run scripts/validate_plugin.py"))
+    if not isinstance(scripts, dict) or scripts.get("test") != "node --test && python3 scripts/validate_plugin.py":
+        issues.append(error("package.json test script must run Node behavior tests and scripts/validate_plugin.py"))
     else:
         expected_scripts = {
             "plugin:build": "openclaw plugins build --root . --entry ./index.js",
@@ -147,6 +148,7 @@ def validate_package_json() -> list[str]:
             "prepublishOnly": (
                 "npm test && node --check index.js && npm run plugin:validate && npm pack --dry-run"
             ),
+            "check:links": "node scripts/check_resource_urls.mjs",
         }
         for script_name, expected in expected_scripts.items():
             if scripts.get(script_name) != expected:
@@ -168,6 +170,7 @@ def validate_package_json() -> list[str]:
     files = manifest.get("files")
     required_package_files = {
         "index.js",
+        "src/**",
         "openclaw.plugin.json",
         "assets/**",
         "skills/**",
@@ -228,23 +231,20 @@ def validate_release_files() -> list[str]:
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8") if (ROOT / "README.md").is_file() else ""
     for phrase in [
-        "assets/raspberry-pi-maker-hero.png",
-        "Install From npm",
-        "Publish Checklist",
-        "Safety Scope",
-        "Contributing",
-        "Security",
-        "License",
-        "npm pack --dry-run",
-        "prepublishOnly",
-        "OpenClaw Tools",
-        "Templates And Examples",
+        "https://raw.githubusercontent.com/sergiopesch/raspberry-pi-maker/master/assets/raspberry-pi-maker-hero.png",
+        "openclaw plugins install clawhub:raspberry-pi-maker",
+        "Safety scope",
+        "OpenClaw tools",
         "pi_wiring_safety_check",
         "pi_laptop_discovery_snapshot",
         "pi_resource_search",
         "pi_board_compare",
         "pi_lifecycle_guide",
-        "Authoritative Resource Catalog",
+        "Publicly accessible documentation is not necessarily public domain",
+        "npm run plugin:validate",
+        "Contributing",
+        "Security",
+        "MIT",
     ]:
         if phrase not in readme:
             issues.append(error(f"README.md missing public release section or phrase: {phrase}"))
@@ -278,6 +278,8 @@ def validate_openclaw_manifest() -> list[str]:
         issues.append(error(f"openclaw.plugin.json id must be {PLUGIN_ID!r}"))
     if manifest.get("version") != PACKAGE_VERSION:
         issues.append(error(f"openclaw.plugin.json version must be {PACKAGE_VERSION!r}"))
+    if manifest.get("icon") != PLUGIN_ICON:
+        issues.append(error("openclaw.plugin.json icon must use the durable public workbench image URL"))
 
     for key in ["name", "description", "version"]:
         value = manifest.get(key)
@@ -291,8 +293,8 @@ def validate_openclaw_manifest() -> list[str]:
         issues.append(error("openclaw.plugin.json configSchema must be a closed object schema"))
 
     activation = manifest.get("activation")
-    if not isinstance(activation, dict) or activation.get("onStartup") is not True:
-        issues.append(error("openclaw.plugin.json activation.onStartup must be true"))
+    if not isinstance(activation, dict) or activation.get("onStartup") is not False:
+        issues.append(error("openclaw.plugin.json activation.onStartup must be false for lazy tool loading"))
 
     contracts = manifest.get("contracts")
     if not isinstance(contracts, dict):
@@ -314,6 +316,7 @@ def validate_openclaw_manifest() -> list[str]:
         "id",
         "name",
         "description",
+        "icon",
         "version",
         "activation",
         "contracts",
@@ -444,7 +447,7 @@ def validate_resource_catalog() -> list[str]:
                 if missing_keys:
                     issues.append(error(f"{label}.profile missing {sorted(missing_keys)}"))
 
-    minimum_counts = {"board": 12, "component": 15, "software": 8, "accessory": 5, "datasheet": 5}
+    minimum_counts = {"board": 20, "component": 25, "software": 8, "accessory": 8, "datasheet": 5}
     for kind, minimum in minimum_counts.items():
         if kind_counts[kind] < minimum:
             issues.append(error(f"resource catalog needs at least {minimum} {kind} entries"))
@@ -457,13 +460,21 @@ def validate_resource_catalog() -> list[str]:
         "rpi-product-information-portal",
         "raspberry-pi-5",
         "raspberry-pi-zero-2-w",
+        "raspberry-pi-2-model-b",
+        "raspberry-pi-3-model-a-plus",
         "compute-module-family",
         "pico-family-docs",
         "camera-hardware",
         "touch-display-2",
+        "sense-hat",
+        "poe-plus-hat",
+        "raspberry-pi-debug-probe",
         "gpio-zero",
         "rp2040-datasheet",
         "rp2350-datasheet",
+        "mcp2515",
+        "max3485-rs485",
+        "pir-motion-sensor",
     }
     missing_ids = required_ids - seen_ids
     if missing_ids:

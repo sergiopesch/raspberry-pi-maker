@@ -1,8 +1,9 @@
 {
   "id": "raspberry-pi-maker",
   "name": "Raspberry Pi Maker",
-  "description": "Raspberry Pi lifecycle guidance, safe wiring checks, and authoritative board, component, datasheet, and software resources.",
-  "version": "1.1.0",
+  "description": "Plan, wire, debug, and ship Raspberry Pi projects with authoritative docs and practical safety checks.",
+  "icon": "https://raw.githubusercontent.com/sergiopesch/raspberry-pi-maker/master/assets/raspberry-pi-maker-hero.png",
+  "version": "1.2.0",
   "skills": [
     "skills"
   ],
@@ -12,7 +13,7 @@
     "additionalProperties": false
   },
   "activation": {
-    "onStartup": true
+    "onStartup": false
   },
   "contracts": {
     "tools": [

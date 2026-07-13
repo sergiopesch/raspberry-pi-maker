@@ -39,6 +39,14 @@ npm run plugin:validate
 npm pack --dry-run
 ```
 
+When changing catalog URLs, also run:
+
+```bash
+npm run check:links
+```
+
+The link check fails definite `404` and `410` responses. It reports access-denied and rate-limited publishers separately because several authoritative sites intentionally block automated clients.
+
 `npm test` validates plugin metadata, OpenClaw manifest shape, resource catalog
 schema and coverage, skill frontmatter, markdown links, safety text, and
 embedded Python code block syntax. CI validates both the declared minimum
