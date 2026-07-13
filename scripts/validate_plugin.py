@@ -134,8 +134,8 @@ def validate_package_json() -> list[str]:
                 )
 
     scripts = manifest.get("scripts")
-    if not isinstance(scripts, dict) or scripts.get("test") != "python3 scripts/validate_plugin.py":
-        issues.append(error("package.json test script must run scripts/validate_plugin.py"))
+    if not isinstance(scripts, dict) or scripts.get("test") != "node --test && python3 scripts/validate_plugin.py":
+        issues.append(error("package.json test script must run Node behavior tests and scripts/validate_plugin.py"))
     else:
         expected_scripts = {
             "plugin:build": "openclaw plugins build --root . --entry ./index.js",
@@ -168,6 +168,7 @@ def validate_package_json() -> list[str]:
     files = manifest.get("files")
     required_package_files = {
         "index.js",
+        "src/**",
         "openclaw.plugin.json",
         "assets/**",
         "skills/**",
