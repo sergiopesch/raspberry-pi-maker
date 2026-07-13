@@ -283,20 +283,46 @@ def validate_publish_workflow() -> list[str]:
     issues: list[str] = []
     required_snippets = [
         "workflow_dispatch:",
+        "pull_request:",
         "id-token: write",
-        "uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.23.1",
+        "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+        "actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "node-version: 22",
+        "npm ci --ignore-scripts --no-audit --no-fund",
+        "npm test",
+        "node --check index.js",
+        "npm run plugin:validate",
+        'mkdir -p "$RUNNER_TEMP/clawpack"',
+        'npm pack --pack-destination "$RUNNER_TEMP/clawpack"',
+        "if-no-files-found: error",
+        "if: github.event_name == 'pull_request'",
+        "if: github.event_name == 'workflow_dispatch'",
+        "uses: openclaw/clawhub/.github/workflows/package-publish.yml@a230d962db64019462c2c8ee400755eb92169908",
+        "package_artifact_name: clawhub-package",
+        "dry_run: true",
         "dry_run: false",
     ]
     for snippet in required_snippets:
         if snippet not in workflow:
             issues.append(error(f"trusted publish workflow missing invariant: {snippet}"))
 
+    if workflow.count("id-token: write") != 3:
+        issues.append(
+            error(
+                "trusted publish workflow must declare id-token permission at the workflow, "
+                "dry-run caller, and publish caller levels required by the reusable workflow"
+            )
+        )
+
     for forbidden in ["CLAWHUB_TOKEN", "secrets.", "@main", "@master"]:
         if forbidden in workflow:
             issues.append(error(f"trusted publish workflow must not contain {forbidden!r}"))
 
-    if "pull_request:" in workflow or re.search(r"^\s+push:\s*$", workflow, re.MULTILINE):
-        issues.append(error("trusted OIDC publishing must remain workflow_dispatch-only"))
+    if re.search(r"^\s+push:\s*$", workflow, re.MULTILINE):
+        issues.append(error("real publishing must not run from a push event"))
+    if re.search(r"uses:\s+[^\s]+@(v\d+|main|master)\s*$", workflow, re.MULTILINE):
+        issues.append(error("release workflow actions must use immutable commit pins"))
 
     return issues
 
