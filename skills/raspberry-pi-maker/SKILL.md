@@ -191,9 +191,9 @@ Prefer `apt` packages for Raspberry Pi OS-managed Python libraries. Use a virtua
 When a Pi is plugged into the user's laptop, start passively:
 
 1. Run `pi_laptop_discovery_snapshot`.
-2. Explain visible clues from USB, serial devices, block devices, local interfaces, `raspberrypi.local`, and the neighbor table.
+2. Explain visible clues from the host device tree, USB, serial devices, block devices, and local interface states.
 3. Ask before any action that could write to storage, open SSH, flash firmware, mount a filesystem, or drive hardware.
-4. If a likely Pi is visible, propose the smallest next read-only command first, such as checking `raspberrypi.local`, identifying a serial device, or confirming the exact network interface.
+4. If a likely Pi is visible, propose the smallest next read-only action first, such as checking `raspberrypi.local`, identifying a serial device, or confirming the intended network interface.
 
 ## Troubleshooting Checklist
 

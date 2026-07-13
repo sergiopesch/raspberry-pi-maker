@@ -1,35 +1,47 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { laptopDiscoverySnapshot } from "../src/discovery.js";
+import { laptopDiscoverySnapshot, runNativeProbe } from "../src/discovery.js";
 
-const outputs = {
-  usb: "Bus 001 Device 002: ID 2e8a:000a Raspberry Pi RP2 Boot\nBus 001 Device 003: ID 1234:5678 Camera Serial ABC123",
-  block: JSON.stringify({
-    blockdevices: [
-      { name: "nvme0n1", model: "Private Disk", size: "1T", tran: "nvme", type: "disk" },
-      { name: "sdb", model: "RPI-SD", size: "32G", tran: "usb", type: "disk" },
+const probeDefinitions = [
+  {
+    id: "host-board",
+    purpose: "Local board identity",
+    collector: () => ({ model: "", compatible: "" }),
+  },
+  {
+    id: "usb",
+    purpose: "USB devices",
+    collector: () => [
+      { busPath: "1-1", vendorId: "2e8a", productId: "000a", manufacturer: "Raspberry Pi", product: "RP2 Boot" },
+      { busPath: "1-2", vendorId: "1234", productId: "5678", manufacturer: "Camera Serial ABC123", product: "Camera" },
     ],
-  }),
-  links: "lo UNKNOWN 00:00:00:00:00:00\neth0 UP dc:a6:32:aa:bb:cc",
-  hostname: "192.168.1.42 raspberrypi.local",
-  "network-manager": "eth0:ethernet:connected:HomeWifi\nwlan0:wifi:disconnected:--",
-  addresses: "eth0 UP 192.168.1.10/24",
-  neighbors: "192.168.1.42 dev eth0 lladdr dc:a6:32:11:22:33 REACHABLE",
-  connections: "wlan0:wifi:connected:SecretSSID",
-};
+  },
+  {
+    id: "block",
+    purpose: "Block devices",
+    collector: () => [
+      { name: "nvme0n1", model: "Private Disk", removable: false, partition: false, transport: "nvme", sizeBytes: 1_000_000 },
+      { name: "sdb", model: "RPI-SD", removable: true, partition: false, transport: "usb", sizeBytes: 32_000 },
+    ],
+  },
+  {
+    id: "links",
+    purpose: "Network interface states",
+    collector: () => [
+      { name: "eth0", state: "up", addresses: [{ address: "192.168.1.10", cidr: "192.168.1.10/24", family: "IPv4", internal: false, mac: "dc:a6:32:aa:bb:cc" }] },
+      { name: "wlan0", state: "down", addresses: [] },
+    ],
+  },
+];
 
 function fixtureDependencies(calls) {
   return {
-    commandRunner(definition) {
+    probeDefinitions,
+    probeRunner(definition) {
       calls.push(definition.id);
-      return {
-        ...definition,
-        ok: true,
-        exitCode: 0,
-        stdout: outputs[definition.id] ?? "",
-        stderr: "",
-      };
+      return runNativeProbe(definition);
     },
     serialCollector() {
       return {
@@ -43,34 +55,38 @@ function fixtureDependencies(calls) {
   };
 }
 
-test("default discovery returns structured summaries without sensitive local values", () => {
+test("default discovery returns native summaries without sensitive local values", () => {
   const calls = [];
   const result = laptopDiscoverySnapshot({}, fixtureDependencies(calls));
   const serialized = JSON.stringify(result);
 
-  assert.ok(!calls.includes("addresses"));
-  assert.ok(!calls.includes("neighbors"));
-  assert.ok(!calls.includes("connections"));
+  assert.deepEqual(calls, ["host-board", "usb", "block", "links"]);
   assert.doesNotMatch(serialized, /192\.168\./);
   assert.doesNotMatch(serialized, /dc:a6:32/i);
-  assert.doesNotMatch(serialized, /HomeWifi|SecretSSID|ABC123|\/dev\/serial\/by-id/);
-  assert.ok(result.commands.every((command) => !("stdout" in command)));
+  assert.doesNotMatch(serialized, /Private Disk|ABC123|eth0|wlan0|\/dev\/serial\/by-id/);
+  assert.ok(result.commands.every((command) => command.method === "native-node"));
+  assert.ok(result.commands.every((command) => !("data" in command)));
   assert.equal(result.serialDevices.count, 2);
   assert.deepEqual(result.serialDevices.types, ["ttyACM"]);
   assert.equal(result.piHints[0].confidence, "high");
+  assert.match(result.safetyBoundary, /No subprocesses/i);
 });
 
-test("raw discovery is explicit and includes a privacy warning", () => {
+test("raw discovery is explicit and includes native details with a privacy warning", () => {
   const calls = [];
   const result = laptopDiscoverySnapshot({ includeRawOutput: true }, fixtureDependencies(calls));
   const serialized = JSON.stringify(result);
 
-  assert.ok(calls.includes("addresses"));
-  assert.ok(calls.includes("neighbors"));
-  assert.ok(calls.includes("connections"));
+  assert.deepEqual(calls, ["host-board", "usb", "block", "links"]);
   assert.match(serialized, /192\.168\.1\.10/);
-  assert.match(serialized, /SecretSSID/);
+  assert.match(serialized, /dc:a6:32:aa:bb:cc/i);
+  assert.match(serialized, /Private Disk|ABC123|eth0/);
   assert.match(result.privacy, /explicitly requested/i);
-  assert.ok(result.commands.some((command) => "stdout" in command));
+  assert.ok(result.commands.every((command) => "data" in command));
   assert.ok(result.serialDevices.paths.some((path) => path.includes("/dev/serial/by-id/")));
+});
+
+test("discovery runtime cannot execute subprocesses", () => {
+  const source = readFileSync(new URL("../src/discovery.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /node:child_process|execFile|execSync|spawnSync/);
 });

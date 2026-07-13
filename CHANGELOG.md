@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.2 - 2026-07-13
+
+- Replace shell-command hardware discovery with read-only native Node.js and
+  Linux filesystem probes.
+- Preserve redacted-by-default discovery while making raw identifiers and
+  network details an explicit opt-in.
+- Add a release regression gate that forbids subprocess execution in runtime
+  plugin code.
+
 ## 1.2.1 - 2026-07-13
 
 - Declare the OpenClaw development dependency so clean installs can reproduce
