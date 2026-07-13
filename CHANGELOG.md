@@ -6,6 +6,8 @@
   plugin validation and packaging checks.
 - Keep releases on ClawHub's supported secretless GitHub OIDC workflow while
   catalog-metadata support is completed upstream.
+- Build one tested ClawPack, run ClawHub's official pull-request dry-run, and
+  require both gates before a manual trusted release can publish.
 
 ## 1.2.0 - 2026-07-13
 

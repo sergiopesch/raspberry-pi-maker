@@ -1,19 +1,71 @@
 name: Publish to ClawHub
 
 on:
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
   id-token: write
 
 jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run release checks
+        run: |
+          npm test
+          node --check index.js
+          npm run plugin:validate
+
+      - name: Build the tested ClawPack
+        run: |
+          mkdir -p "$RUNNER_TEMP/clawpack"
+          npm pack --pack-destination "$RUNNER_TEMP/clawpack"
+
+      - name: Upload the tested ClawPack
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: clawhub-package
+          path: ${{ runner.temp }}/clawpack/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  dry-run:
+    if: github.event_name == 'pull_request'
+    needs: package
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@a230d962db64019462c2c8ee400755eb92169908
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    with:
+      dry_run: true
+      package_artifact_name: clawhub-package
+
   publish:
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.23.1
+    if: github.event_name == 'workflow_dispatch'
+    needs: package
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@a230d962db64019462c2c8ee400755eb92169908
     permissions:
       actions: read
       contents: read
       id-token: write
     with:
       dry_run: false
+      package_artifact_name: clawhub-package
