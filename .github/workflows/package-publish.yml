@@ -17,4 +17,3 @@ jobs:
       id-token: write
     with:
       dry_run: false
-      owner: sergiopesch
