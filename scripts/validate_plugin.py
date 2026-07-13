@@ -16,6 +16,7 @@ LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 CODE_BLOCK_PATTERN = re.compile(r"```(?P<lang>[A-Za-z0-9_-]*)\n(?P<code>.*?)\n```", re.DOTALL)
 PLUGIN_ID = "raspberry-pi-maker"
 PACKAGE_VERSION = "1.2.0"
+PLUGIN_ICON = "https://raw.githubusercontent.com/sergiopesch/raspberry-pi-maker/master/assets/raspberry-pi-maker-hero.png"
 MIN_OPENCLAW_VERSION = "2026.5.22"
 MIN_NODE_VERSION = ">=22"
 TOOL_NAMES = {
@@ -277,6 +278,8 @@ def validate_openclaw_manifest() -> list[str]:
         issues.append(error(f"openclaw.plugin.json id must be {PLUGIN_ID!r}"))
     if manifest.get("version") != PACKAGE_VERSION:
         issues.append(error(f"openclaw.plugin.json version must be {PACKAGE_VERSION!r}"))
+    if manifest.get("icon") != PLUGIN_ICON:
+        issues.append(error("openclaw.plugin.json icon must use the durable public workbench image URL"))
 
     for key in ["name", "description", "version"]:
         value = manifest.get(key)
@@ -313,6 +316,7 @@ def validate_openclaw_manifest() -> list[str]:
         "id",
         "name",
         "description",
+        "icon",
         "version",
         "activation",
         "contracts",
