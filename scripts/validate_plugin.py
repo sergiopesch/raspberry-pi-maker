@@ -147,6 +147,7 @@ def validate_package_json() -> list[str]:
             "prepublishOnly": (
                 "npm test && node --check index.js && npm run plugin:validate && npm pack --dry-run"
             ),
+            "check:links": "node scripts/check_resource_urls.mjs",
         }
         for script_name, expected in expected_scripts.items():
             if scripts.get(script_name) != expected:
@@ -442,7 +443,7 @@ def validate_resource_catalog() -> list[str]:
                 if missing_keys:
                     issues.append(error(f"{label}.profile missing {sorted(missing_keys)}"))
 
-    minimum_counts = {"board": 12, "component": 15, "software": 8, "accessory": 5, "datasheet": 5}
+    minimum_counts = {"board": 20, "component": 25, "software": 8, "accessory": 8, "datasheet": 5}
     for kind, minimum in minimum_counts.items():
         if kind_counts[kind] < minimum:
             issues.append(error(f"resource catalog needs at least {minimum} {kind} entries"))
@@ -455,13 +456,21 @@ def validate_resource_catalog() -> list[str]:
         "rpi-product-information-portal",
         "raspberry-pi-5",
         "raspberry-pi-zero-2-w",
+        "raspberry-pi-2-model-b",
+        "raspberry-pi-3-model-a-plus",
         "compute-module-family",
         "pico-family-docs",
         "camera-hardware",
         "touch-display-2",
+        "sense-hat",
+        "poe-plus-hat",
+        "raspberry-pi-debug-probe",
         "gpio-zero",
         "rp2040-datasheet",
         "rp2350-datasheet",
+        "mcp2515",
+        "max3485-rs485",
+        "pir-motion-sensor",
     }
     missing_ids = required_ids - seen_ids
     if missing_ids:

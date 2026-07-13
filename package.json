@@ -50,6 +50,7 @@
     "plugin:validate": "openclaw plugins build --root . --entry ./index.js --check && openclaw plugins validate --root . --entry ./index.js",
     "prepack": "npm test && node --check index.js && npm run plugin:validate",
     "prepublishOnly": "npm test && node --check index.js && npm run plugin:validate && npm pack --dry-run",
+    "check:links": "node scripts/check_resource_urls.mjs",
     "validate": "python3 scripts/validate_plugin.py",
     "test": "node --test && python3 scripts/validate_plugin.py"
   },

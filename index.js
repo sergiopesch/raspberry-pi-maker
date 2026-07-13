@@ -1,8 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { platform, release } from "node:os";
 import { Type } from "typebox";
 import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
+import {
+  LIFECYCLE_STAGE_NAMES,
+  RESOURCE_KINDS,
+  boardCompare,
+  normalizeSearchText,
+  resourceSearch,
+} from "./src/catalog.js";
 import { lookupPin, normalizePinExpression, normalizePinTokens } from "./src/pinout.js";
 import { buildSafetyFindings } from "./src/safety.js";
 
@@ -16,30 +23,6 @@ const DISCOVERY_COMMANDS = [
   { command: "nmcli", args: ["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"], purpose: "NetworkManager device state" },
 ];
 
-const RESOURCE_CATALOG = Object.freeze(
-  JSON.parse(readFileSync(new URL("./data/resources.json", import.meta.url), "utf8"))
-);
-const RESOURCE_KINDS = Object.freeze([
-  "all",
-  "board",
-  "accessory",
-  "component",
-  "datasheet",
-  "software",
-  "learning",
-]);
-const LIFECYCLE_STAGE_NAMES = Object.freeze([
-  "choose",
-  "setup",
-  "design",
-  "build",
-  "code",
-  "test",
-  "debug",
-  "deploy",
-  "maintain",
-  "retire",
-]);
 const LIFECYCLE_ALIASES = new Map([
   ["buy", "choose"],
   ["select", "choose"],
@@ -302,128 +285,6 @@ function laptopDiscoverySnapshot({ includeRawOutput = false } = {}) {
       "If a serial device appears, identify it with `udevadm info --query=all --name=/dev/<device>` before using it.",
       "If an SD card or USB mass-storage device appears, do not mount or write to it until the user confirms the device path.",
     ],
-  };
-}
-
-function normalizeSearchText(value) {
-  return String(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9+.-]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-function resourceSearch({ query = "", kind = "all", stage = "all", limit = 8 } = {}) {
-  const normalizedQuery = normalizeSearchText(query);
-  const tokens = normalizedQuery.split(" ").filter(Boolean);
-  const boundedLimit = Math.min(20, Math.max(1, Number.isFinite(limit) ? Math.floor(limit) : 8));
-  const normalizedKind = RESOURCE_KINDS.includes(kind) ? kind : "all";
-  const normalizedStage = LIFECYCLE_STAGE_NAMES.includes(stage) ? stage : "all";
-
-  const results = RESOURCE_CATALOG.resources
-    .filter((resource) => normalizedKind === "all" || resource.kind === normalizedKind)
-    .filter((resource) => normalizedStage === "all" || resource.stages.includes(normalizedStage))
-    .map((resource) => {
-      const id = normalizeSearchText(resource.id);
-      const title = normalizeSearchText(resource.title);
-      const aliases = resource.aliases.map(normalizeSearchText);
-      const topics = resource.topics.map(normalizeSearchText);
-      const summary = normalizeSearchText(resource.summary);
-      let score = normalizedQuery ? 0 : 1;
-
-      if (normalizedQuery && [id, title, ...aliases].includes(normalizedQuery)) score += 120;
-      if (normalizedQuery && title.includes(normalizedQuery)) score += 50;
-      if (normalizedQuery && aliases.some((alias) => alias.includes(normalizedQuery))) score += 40;
-
-      for (const token of tokens) {
-        if (id.includes(token)) score += 14;
-        if (title.includes(token)) score += 12;
-        if (aliases.some((alias) => alias.includes(token))) score += 9;
-        if (topics.some((topic) => topic.includes(token))) score += 7;
-        if (summary.includes(token)) score += 2;
-      }
-
-      return { resource, score };
-    })
-    .filter(({ score }) => score > 0)
-    .sort((left, right) => right.score - left.score || left.resource.title.localeCompare(right.resource.title))
-    .slice(0, boundedLimit)
-    .map(({ resource, score }) => ({
-      id: resource.id,
-      title: resource.title,
-      kind: resource.kind,
-      stages: resource.stages,
-      summary: resource.summary,
-      url: resource.url,
-      publisher: resource.publisher,
-      authority: resource.authority,
-      license: resource.license,
-      ...(resource.safety ? { safety: resource.safety } : {}),
-      relevance: score,
-    }));
-
-  return {
-    query,
-    filters: { kind: normalizedKind, stage: normalizedStage },
-    reviewedOn: RESOURCE_CATALOG.reviewedOn,
-    results,
-    resultCount: results.length,
-    coverage: RESOURCE_CATALOG.policy.scope,
-    copyright: RESOURCE_CATALOG.policy.copyright,
-    freshness: RESOURCE_CATALOG.policy.freshness,
-  };
-}
-
-function findBoardResource(input) {
-  const query = normalizeSearchText(input);
-  const candidates = RESOURCE_CATALOG.resources.filter(
-    (resource) => resource.kind === "board" && resource.profile
-  );
-  const exact = candidates.find((resource) =>
-    [resource.id, resource.title, ...resource.aliases]
-      .map(normalizeSearchText)
-      .includes(query)
-  );
-  if (exact) return exact;
-
-  return candidates.find((resource) => {
-    const names = [resource.id, resource.title, ...resource.aliases].map(normalizeSearchText);
-    return names.some((name) => name.includes(query) || query.includes(name));
-  });
-}
-
-function boardCompare({ boards }) {
-  const uniqueBoards = [...new Set(boards.map((board) => String(board).trim()).filter(Boolean))].slice(0, 6);
-  const matches = uniqueBoards.map((query) => {
-    const resource = findBoardResource(query);
-    if (!resource) {
-      return {
-        query,
-        found: false,
-        issue: "Board profile not found. Use pi_resource_search for the complete official board catalog or a legacy model.",
-      };
-    }
-    return {
-      query,
-      found: true,
-      id: resource.id,
-      title: resource.title,
-      summary: resource.summary,
-      source: resource.url,
-      ...resource.profile,
-    };
-  });
-
-  return {
-    reviewedOn: RESOURCE_CATALOG.reviewedOn,
-    boards: matches,
-    decisionQuestions: [
-      "Does the project need a full Linux OS, deterministic real-time control, or both?",
-      "Which camera, display, storage, PCIe, network, and GPIO interfaces are mandatory?",
-      "What are the sustained power, cooling, enclosure, and physical-access constraints?",
-      "Is this a one-off prototype or a maintained product that needs availability and lifecycle evidence?",
-    ],
-    reminder: "Confirm the exact product variant, ordering code, current documentation, and connector/cable requirements before purchasing.",
   };
 }
 

@@ -27,7 +27,7 @@ Try asking:
 | Tool | Job |
 | --- | --- |
 | `pi_project_plan` | Turn an idea into a build and test plan. |
-| `pi_resource_search` | Search 54 reviewed board, component, software, and datasheet sources. |
+| `pi_resource_search` | Search 78 reviewed board, accessory, component, software, and datasheet sources. |
 | `pi_board_compare` | Compare indexed Raspberry Pi boards. |
 | `pi_lifecycle_guide` | Move a project from selection through retirement. |
 | `pi_pin_lookup` | Look up 40-pin header pins. |
