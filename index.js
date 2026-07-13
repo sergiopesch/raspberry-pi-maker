@@ -1,6 +1,3 @@
-import { execFileSync } from "node:child_process";
-import { readdirSync } from "node:fs";
-import { platform, release } from "node:os";
 import { Type } from "typebox";
 import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
 import {
@@ -12,16 +9,7 @@ import {
 } from "./src/catalog.js";
 import { lookupPin, normalizePinExpression, normalizePinTokens } from "./src/pinout.js";
 import { buildSafetyFindings } from "./src/safety.js";
-
-const DEFAULT_COMMAND_TIMEOUT_MS = 3000;
-const DISCOVERY_COMMANDS = [
-  { command: "lsusb", args: [], purpose: "USB devices" },
-  { command: "lsblk", args: ["-o", "NAME,MODEL,SIZE,TRAN,TYPE,MOUNTPOINTS"], purpose: "Block devices" },
-  { command: "ip", args: ["-brief", "addr"], purpose: "Network interfaces" },
-  { command: "ip", args: ["neigh", "show"], purpose: "Neighbor table" },
-  { command: "getent", args: ["hosts", "raspberrypi.local"], purpose: "mDNS hostname lookup", timeoutMs: 1500 },
-  { command: "nmcli", args: ["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"], purpose: "NetworkManager device state" },
-];
+import { laptopDiscoverySnapshot } from "./src/discovery.js";
 
 const LIFECYCLE_ALIASES = new Map([
   ["buy", "choose"],
@@ -160,133 +148,6 @@ const LIFECYCLE_STAGES = Object.freeze({
     resourceQuery: "eol obsolescence legacy boards",
   },
 });
-
-function truncateText(text, maxLength) {
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength)}\n...<truncated>`;
-}
-
-function runReadOnlyCommand({ command, args, purpose, timeoutMs }, maxOutputLength) {
-  try {
-    const stdout = execFileSync(command, args, {
-      encoding: "utf8",
-      maxBuffer: 128 * 1024,
-      shell: false,
-      timeout: timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
-    });
-    return {
-      command,
-      args,
-      purpose,
-      ok: true,
-      exitCode: 0,
-      stdout: truncateText(stdout.trim(), maxOutputLength),
-      stderr: "",
-    };
-  } catch (error) {
-    const stdout = typeof error.stdout === "string" ? error.stdout : String(error.stdout ?? "");
-    const stderr = typeof error.stderr === "string" ? error.stderr : String(error.stderr ?? "");
-    return {
-      command,
-      args,
-      purpose,
-      ok: false,
-      exitCode: Number.isInteger(error.status) ? error.status : null,
-      error: error.code === "ENOENT" ? "command_not_found" : error.message,
-      stdout: truncateText(stdout.trim(), maxOutputLength),
-      stderr: truncateText(stderr.trim(), maxOutputLength),
-    };
-  }
-}
-
-function readDirectoryEntries(path) {
-  try {
-    return readdirSync(path, { withFileTypes: true }).map((entry) => entry.name).sort();
-  } catch {
-    return [];
-  }
-}
-
-function collectSerialDevices() {
-  const devEntries = readDirectoryEntries("/dev")
-    .filter((entry) => /^(ttyACM|ttyUSB|ttyAMA|serial)/.test(entry))
-    .map((entry) => `/dev/${entry}`);
-  const byIdEntries = readDirectoryEntries("/dev/serial/by-id").map((entry) => `/dev/serial/by-id/${entry}`);
-  return [...devEntries, ...byIdEntries];
-}
-
-function commandOutput(commands, commandName) {
-  return commands.find((entry) => entry.command === commandName)?.stdout ?? "";
-}
-
-function inferPiHints({ commands, serialDevices }) {
-  const lsusb = commandOutput(commands, "lsusb");
-  const getent = commandOutput(commands, "getent");
-  const neighbors = commands.find((entry) => entry.command === "ip" && entry.args[0] === "neigh")?.stdout ?? "";
-  const hints = [];
-
-  if (/raspberry pi|pi foundation|bcm27|rp2 boot/i.test(lsusb)) {
-    hints.push({
-      confidence: "high",
-      source: "lsusb",
-      message: "USB output contains a Raspberry Pi or Raspberry Pi Foundation identifier.",
-    });
-  }
-
-  if (/raspberrypi\.local/i.test(getent) || getent.trim()) {
-    hints.push({
-      confidence: "medium",
-      source: "getent hosts raspberrypi.local",
-      message: "The default raspberrypi.local hostname resolved on this laptop.",
-    });
-  }
-
-  if (serialDevices.length > 0) {
-    hints.push({
-      confidence: "medium",
-      source: "/dev serial devices",
-      message: "Serial-style devices are present. These may be Pi UART/USB gadget links, microcontrollers, or adapters.",
-    });
-  }
-
-  if (/169\.254\.|usb|ether/i.test(neighbors)) {
-    hints.push({
-      confidence: "low",
-      source: "ip neigh",
-      message: "Neighbor table includes link-local or USB/Ethernet-looking entries that may be relevant to a directly connected Pi.",
-    });
-  }
-
-  return hints;
-}
-
-function laptopDiscoverySnapshot({ includeRawOutput = false } = {}) {
-  const maxOutputLength = includeRawOutput ? 16000 : 4000;
-  const commands = DISCOVERY_COMMANDS.map((definition) =>
-    runReadOnlyCommand(definition, maxOutputLength)
-  );
-  const serialDevices = collectSerialDevices();
-  const piHints = inferPiHints({ commands, serialDevices });
-
-  return {
-    generatedAt: new Date().toISOString(),
-    host: {
-      platform: platform(),
-      kernel: release(),
-      node: process.version,
-    },
-    safetyBoundary: "Read-only laptop discovery. No GPIO, disks, firmware, mounts, SSH sessions, or network scans were modified or started.",
-    serialDevices,
-    piHints,
-    commands,
-    nextSteps: [
-      "If no Pi is detected, connect power and data separately: use a known data-capable USB cable or Ethernet.",
-      "If raspberrypi.local resolves, ask before opening SSH; first confirm the target IP and user.",
-      "If a serial device appears, identify it with `udevadm info --query=all --name=/dev/<device>` before using it.",
-      "If an SD card or USB mass-storage device appears, do not mount or write to it until the user confirms the device path.",
-    ],
-  };
-}
 
 function lifecycleGuide({ stage, project = "", includeResources = true }) {
   const requestedStage = normalizeSearchText(stage);
@@ -547,7 +408,7 @@ export default defineToolPlugin({
       label: "Pi Laptop Discovery Snapshot",
       description: "Collect a read-only snapshot of Raspberry Pi-related devices visible from the laptop.",
       parameters: Type.Object({
-        includeRawOutput: Type.Optional(Type.Boolean({ description: "Include longer command output. Defaults to false." })),
+        includeRawOutput: Type.Optional(Type.Boolean({ description: "Explicitly include sensitive raw local output such as device identifiers, addresses, mount details, and connection names. Defaults to false with structured redaction." })),
       }),
       execute: ({ includeRawOutput }) =>
         laptopDiscoverySnapshot({ includeRawOutput: includeRawOutput ?? false }),
