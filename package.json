@@ -1,6 +1,6 @@
 {
   "name": "raspberry-pi-maker",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Plan, wire, debug, and ship Raspberry Pi projects with authoritative docs and practical safety checks.",
   "type": "module",
   "main": "./index.js",
@@ -48,11 +48,13 @@
   "scripts": {
     "plugin:build": "openclaw plugins build --root . --entry ./index.js",
     "plugin:validate": "openclaw plugins build --root . --entry ./index.js --check && openclaw plugins validate --root . --entry ./index.js",
-    "prepack": "npm test && node --check index.js && npm run plugin:validate",
+    "prepack": "python3 scripts/runtime_manifest.py check && npm test && node --check index.js && npm run plugin:validate && python3 scripts/runtime_manifest.py prepare",
     "prepublishOnly": "npm test && node --check index.js && npm run plugin:validate && npm pack --dry-run",
     "check:links": "node scripts/check_resource_urls.mjs",
     "validate": "python3 scripts/validate_plugin.py",
-    "test": "node --test && python3 scripts/validate_plugin.py"
+    "test": "node --test && python3 scripts/validate_plugin.py",
+    "check:dev-sdk": "python3 vendor/dev/verify.py && node --test vendor/dev/compat.test.cjs",
+    "postpack": "python3 scripts/runtime_manifest.py restore"
   },
   "publishConfig": {
     "access": "public"
@@ -61,7 +63,15 @@
     "typebox": "^1.1.38"
   },
   "devDependencies": {
-    "openclaw": "2026.6.11"
+    "openclaw": "2026.10.5",
+    "npm": "file:vendor/dev/npm-12.2.1-sergiopesch-security-20261025.tgz"
+  },
+  "overrides": {
+    "openclaw@2026.10.5": {
+      "undici@8.11.2": "8.12.3",
+      "zod@4.6.5": "4.6.7",
+      "npm@12.2.0": "$npm"
+    }
   },
   "peerDependencies": {
     "openclaw": ">=2026.5.22"
@@ -75,8 +85,13 @@
       "minGatewayVersion": "2026.5.22"
     },
     "build": {
-      "openclawVersion": "2026.5.22",
-      "pluginSdkVersion": "2026.5.22"
+      "openclawVersion": "2026.10.5",
+      "pluginSdkVersion": "2026.10.5"
+    }
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
     }
   }
 }

@@ -5,3 +5,4 @@
 *.tmp
 node_modules/
 raspberry-pi-maker-*.tgz
+vendor/
