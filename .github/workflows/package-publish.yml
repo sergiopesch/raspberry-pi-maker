@@ -21,14 +21,20 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: 22
+          node-version: "24.19.0"
           cache: npm
 
       - name: Install exact dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: |
+          python3 vendor/dev/verify.py
+          npm ci --no-audit --no-fund --engine-strict
+
+      - name: Audit the complete development dependency graph
+        run: npm audit --audit-level=low
 
       - name: Run release checks
         run: |
+          npm run check:dev-sdk
           npm test
           node --check index.js
           npm run plugin:validate
@@ -37,6 +43,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/clawpack"
           npm pack --pack-destination "$RUNNER_TEMP/clawpack"
+          python3 vendor/dev/check_pack.py "$RUNNER_TEMP/clawpack"/*.tgz
 
       - name: Upload the tested ClawPack
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

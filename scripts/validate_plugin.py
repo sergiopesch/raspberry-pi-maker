@@ -15,9 +15,10 @@ FRONTMATTER_PATTERN = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 CODE_BLOCK_PATTERN = re.compile(r"```(?P<lang>[A-Za-z0-9_-]*)\n(?P<code>.*?)\n```", re.DOTALL)
 PLUGIN_ID = "raspberry-pi-maker"
-PACKAGE_VERSION = "1.2.2"
+PACKAGE_VERSION = "1.2.3"
 PLUGIN_ICON = "https://raw.githubusercontent.com/sergiopesch/raspberry-pi-maker/master/assets/raspberry-pi-maker-hero.png"
 MIN_OPENCLAW_VERSION = "2026.5.22"
+DEV_OPENCLAW_VERSION = "2026.10.5"
 MIN_NODE_VERSION = ">=22"
 TOOL_NAMES = {
     "pi_project_plan",
@@ -106,8 +107,21 @@ def validate_package_json() -> list[str]:
         issues.append(error('package.json dependencies.typebox must be "^1.1.38"'))
 
     dev_dependencies = manifest.get("devDependencies")
-    if not isinstance(dev_dependencies, dict) or dev_dependencies.get("openclaw") != "2026.6.11":
-        issues.append(error('package.json devDependencies.openclaw must pin "2026.6.11"'))
+    if not isinstance(dev_dependencies, dict) or dev_dependencies.get("openclaw") != DEV_OPENCLAW_VERSION:
+        issues.append(error(f'package.json devDependencies.openclaw must pin "{DEV_OPENCLAW_VERSION}"'))
+
+    if not isinstance(dev_dependencies, dict) or dev_dependencies.get("npm") != "file:vendor/dev/npm-12.2.1-sergiopesch-security-20261025.tgz":
+        issues.append(error("package.json development npm must use the reviewed local archive"))
+
+    expected_overrides = {
+        "openclaw@2026.10.5": {
+            "undici@8.11.2": "8.12.3",
+            "zod@4.6.5": "4.6.7",
+            "npm@12.2.0": "$npm",
+        }
+    }
+    if manifest.get("overrides") != expected_overrides:
+        issues.append(error("package.json must retain the reviewed version-scoped development SDK overrides"))
 
     openclaw = manifest.get("openclaw")
     if not isinstance(openclaw, dict):
@@ -129,13 +143,13 @@ def validate_package_json() -> list[str]:
         if not isinstance(build, dict):
             issues.append(error("package.json openclaw.build is required"))
         else:
-            if build.get("openclawVersion") != MIN_OPENCLAW_VERSION:
+            if build.get("openclawVersion") != DEV_OPENCLAW_VERSION:
                 issues.append(
-                    error(f"package.json openclaw.build.openclawVersion must be {MIN_OPENCLAW_VERSION}")
+                    error(f"package.json openclaw.build.openclawVersion must be {DEV_OPENCLAW_VERSION}")
                 )
-            if build.get("pluginSdkVersion") != MIN_OPENCLAW_VERSION:
+            if build.get("pluginSdkVersion") != DEV_OPENCLAW_VERSION:
                 issues.append(
-                    error(f"package.json openclaw.build.pluginSdkVersion must be {MIN_OPENCLAW_VERSION}")
+                    error(f"package.json openclaw.build.pluginSdkVersion must be {DEV_OPENCLAW_VERSION}")
                 )
 
     scripts = manifest.get("scripts")
@@ -148,11 +162,13 @@ def validate_package_json() -> list[str]:
                 "openclaw plugins build --root . --entry ./index.js --check && "
                 "openclaw plugins validate --root . --entry ./index.js"
             ),
-            "prepack": "npm test && node --check index.js && npm run plugin:validate",
+            "prepack": "python3 scripts/runtime_manifest.py check && npm test && node --check index.js && npm run plugin:validate && python3 scripts/runtime_manifest.py prepare",
+            "postpack": "python3 scripts/runtime_manifest.py restore",
             "prepublishOnly": (
                 "npm test && node --check index.js && npm run plugin:validate && npm pack --dry-run"
             ),
             "check:links": "node scripts/check_resource_urls.mjs",
+            "check:dev-sdk": "python3 vendor/dev/verify.py && node --test vendor/dev/compat.test.cjs",
         }
         for script_name, expected in expected_scripts.items():
             if scripts.get(script_name) != expected:
@@ -161,6 +177,9 @@ def validate_package_json() -> list[str]:
     peer_deps = manifest.get("peerDependencies")
     if not isinstance(peer_deps, dict) or peer_deps.get("openclaw") != f">={MIN_OPENCLAW_VERSION}":
         issues.append(error(f"package.json peerDependencies.openclaw must be >={MIN_OPENCLAW_VERSION}"))
+
+    if manifest.get("peerDependenciesMeta") != {"openclaw": {"optional": True}}:
+        issues.append(error("package.json must declare OpenClaw as a host-provided peer"))
 
     for key in ["homepage"]:
         issues.extend(validate_url(manifest.get(key), f"package.json {key}"))
@@ -288,8 +307,11 @@ def validate_publish_workflow() -> list[str]:
         "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
         "actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-        "node-version: 22",
-        "npm ci --ignore-scripts --no-audit --no-fund",
+        'node-version: "24.19.0"',
+        "npm ci --no-audit --no-fund --engine-strict",
+        "python3 vendor/dev/verify.py",
+        "npm audit --audit-level=low",
+        "npm run check:dev-sdk",
         "npm test",
         "node --check index.js",
         "npm run plugin:validate",

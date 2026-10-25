@@ -30,9 +30,33 @@ pull-ups, or address straps.
 
 ## Validation
 
+Use Node.js 24.19.0 for development and release checks, then install the locked
+dependencies with `npm ci`. The development SDK is pinned independently of the
+consumer compatibility floor of OpenClaw 2026.5.22 and Node.js 22.
+Version-specific overrides patch the SDK's Undici, Zod, and bundled npm
+dependencies until OpenClaw updates its pins. The owned npm archive, source
+integrities, member provenance, and rebuild tools are under `vendor/dev` and are
+excluded from the published plugin. Recheck these overrides and the full
+development dependency audit when upgrading the SDK. Operator hosts require
+their own updates; plugin development overrides are not inherited by consumers.
+OpenClaw is a host-provided peer: its >=2026.5.22 constraint and runtime SDK import
+remain required, while npm does not auto-install another Gateway for the plugin.
+
+Normal `npm pack` runs the source checks, temporarily omits only development
+dependencies and overrides from the packed manifest, then restores the exact
+source bytes in `postpack`. This keeps older supported native installers from
+resolving source-only archive paths. A guarded backup lives under `reports`.
+If packing fails after preparation (including tar or destination-write errors),
+or is forcibly interrupted, wait for that pack process to exit and run
+`python3 scripts/runtime_manifest.py restore` before continuing. Recovery refuses
+foreign backups or a manifest edited during packing; reconcile those changes
+manually. Failed packing and SIGKILL do not guarantee automatic cleanup.
+
 Run the full local check before submitting changes:
 
 ```bash
+npm run check:dev-sdk
+npm audit --audit-level=low
 npm test
 node --check index.js
 npm run plugin:validate

@@ -18,7 +18,7 @@ jobs:
       matrix:
         openclaw-version:
           - "2026.5.22"
-          - "2026.6.11"
+          - "2026.10.5"
 
     steps:
       - name: Check out repository
@@ -27,7 +27,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24.19.0"
           cache: npm
 
       - name: Set up Python
@@ -36,18 +36,68 @@ jobs:
           python-version: "3.12"
 
       - name: Install package dependencies
-        run: npm ci --ignore-scripts --legacy-peer-deps
+        run: |
+          python3 vendor/dev/verify.py
+          npm ci --no-audit --no-fund --engine-strict
 
-      - name: Install OpenClaw host CLI
-        run: npm install --global "openclaw@${{ matrix.openclaw-version }}"
+      - name: Audit the complete development dependency graph
+        run: npm audit --audit-level=low
+
+      - name: Verify the owned development npm compatibility
+        run: npm run check:dev-sdk
+
+      - name: Install minimum host for compatibility checks
+        if: matrix.openclaw-version != '2026.10.5'
+        run: npm install --global --no-audit --no-fund --engine-strict "openclaw@${{ matrix.openclaw-version }}"
 
       - name: Validate repository and code syntax
         run: |
           npm test
           node --check index.js
+          npm run plugin:validate
+
+      - name: Check registration with the minimum host SDK
+        if: matrix.openclaw-version != '2026.10.5'
+        run: |
+          mv node_modules/openclaw "$RUNNER_TEMP/build-sdk"
+          ln -s "$(npm root --global)/openclaw" node_modules/openclaw
+          node --test test/plugin.test.js
 
       - name: Validate native plugin metadata
-        run: npm run plugin:validate
+        env:
+          EXPECTED_OPENCLAW_VERSION: ${{ matrix.openclaw-version }}
+        run: |
+          if [ "$EXPECTED_OPENCLAW_VERSION" = "2026.10.5" ]; then
+            host_cli="$PWD/node_modules/openclaw/openclaw.mjs"
+          else
+            host_cli="$(npm root --global)/openclaw/openclaw.mjs"
+          fi
+          node --input-type=module -e 'import { readFileSync } from "node:fs"; import { dirname, join } from "node:path"; const actual = JSON.parse(readFileSync(join(dirname(process.argv[1]), "package.json"), "utf8")).version; if (actual !== process.env.EXPECTED_OPENCLAW_VERSION) throw new Error(`Expected host ${process.env.EXPECTED_OPENCLAW_VERSION}, got ${actual}`);' "$host_cli"
+          node "$host_cli" --version
+          node "$host_cli" plugins build --root . --entry ./index.js --check
+          node "$host_cli" plugins validate --root . --entry ./index.js
+
+      - name: Restore the audited development SDK before packing
+        if: always() && matrix.openclaw-version != '2026.10.5'
+        run: |
+          if [ -d "$RUNNER_TEMP/build-sdk" ]; then
+            test -L node_modules/openclaw
+            rm node_modules/openclaw
+            mv "$RUNNER_TEMP/build-sdk" node_modules/openclaw
+          fi
 
       - name: Prove package contents
-        run: npm pack --dry-run
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          python3 vendor/dev/check_pack.py "$RUNNER_TEMP"/raspberry-pi-maker-*.tgz
+
+      - name: Verify native installation of the runtime archive
+        env:
+          EXPECTED_OPENCLAW_VERSION: ${{ matrix.openclaw-version }}
+        run: |
+          if [ "$EXPECTED_OPENCLAW_VERSION" = "2026.10.5" ]; then
+            host_root="$PWD/node_modules/openclaw"
+          else
+            host_root="$(npm root --global)/openclaw"
+          fi
+          node vendor/dev/native_install_smoke.mjs "$RUNNER_TEMP"/raspberry-pi-maker-*.tgz "$host_root"

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.3 - 2026-10-25
+
+- Update the development OpenClaw SDK and lock its patched dependency closure,
+  including a reproducible owned npm bundle with two official security patches.
+- Run release checks with the supported development Node.js runtime, native SDK
+  loading, full dependency audits, and the actual minimum/current host CLI.
+- Test the real eight-tool registration and execution contract while preserving
+  the OpenClaw 2026.5.22 compatibility floor and read-only discovery behavior.
+- Declare OpenClaw as a host-provided peer so native installers keep the existing
+  compatible Gateway instead of downloading a second one.
+- Keep the owned npm archive and its rebuild tools out of the published plugin;
+  consumer hosts remain responsible for their own dependency updates.
+
 ## 1.2.2 - 2026-07-13
 
 - Replace shell-command hardware discovery with read-only native Node.js and
